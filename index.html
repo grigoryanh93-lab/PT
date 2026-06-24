@@ -11,31 +11,66 @@
     <header class="hero">
       <div>
         <p class="eyebrow">Home Health PT</p>
-        <h1>Weekly scheduling made simple</h1>
-        <p>Track patients, authorizations, visit frequency, and routes from an iPhone-friendly dashboard.</p>
+        <h1>Today’s PT route</h1>
+        <p>Mobile scheduling, visit tracking, authorization alerts, mileage, and backup tools for home health physical therapy.</p>
       </div>
       <button id="reset-demo" type="button">Reset demo</button>
     </header>
+
     <section class="stats" aria-label="Patient statistics">
       <div><span>👥</span><strong id="patient-count">0</strong><small>patients</small></div>
-      <div><span>📅</span><strong id="visit-count">0</strong><small>visits remaining</small></div>
+      <div><span>✅</span><strong id="visit-count">0</strong><small>visits remaining</small></div>
+      <div><span>🚗</span><strong id="mileage-total">0.0</strong><small>miles logged</small></div>
     </section>
+
+    <section class="card dashboard" aria-labelledby="today-heading">
+      <div class="section-title" id="today-heading">🏠 Today’s visits</div>
+      <div id="today-list" class="today-list"></div>
+    </section>
+
+    <section class="card" aria-labelledby="calendar-heading">
+      <div class="section-title" id="calendar-heading">🗓️ Weekly calendar</div>
+      <div id="calendar" class="calendar"></div>
+    </section>
+
     <form class="card form" id="patient-form">
-      <div class="section-title">➕ Add patient</div>
-      <input required name="name" placeholder="Patient name" />
-      <input required name="area" placeholder="Area / neighborhood" />
-      <input required name="address" placeholder="Address" />
-      <input name="phone" placeholder="Phone number" />
+      <div class="section-title" id="form-title">➕ Add patient</div>
+      <input required name="name" placeholder="Patient name" autocomplete="name" />
+      <input required name="area" placeholder="City / area" />
+      <input required name="address" placeholder="Address" autocomplete="street-address" />
+      <input name="phone" placeholder="Phone number" inputmode="tel" autocomplete="tel" />
+      <input name="agency" placeholder="Agency" />
       <div class="grid-two">
-        <input min="0" type="number" name="visitsRemaining" placeholder="Visits" value="1" />
+        <input min="0" type="number" name="visitsRemaining" placeholder="Visits remaining" value="1" />
         <select name="frequency"><option>1x/week</option><option>2x/week</option><option>3x/week</option><option>PRN</option></select>
       </div>
       <label>Authorization expiration<input type="date" name="authExpiration" /></label>
-      <textarea name="scheduleText" placeholder="Weekly schedule, one visit per line"></textarea>
+      <fieldset>
+        <legend>Weekly schedule</legend>
+        <div id="schedule-fields" class="schedule-fields"></div>
+      </fieldset>
       <textarea name="notes" placeholder="Notes"></textarea>
-      <button class="primary" type="submit">💾 Save patient</button>
+      <div class="button-row"><button class="primary" type="submit">💾 Save patient</button><button id="cancel-edit" type="button" hidden>Cancel edit</button></div>
     </form>
-    <section class="areas" id="areas"></section>
+
+    <section class="card backup" aria-labelledby="backup-heading">
+      <div class="section-title" id="backup-heading">☁️ Backup export / import</div>
+      <button class="primary" id="export-data" type="button">Export backup</button>
+      <label class="import-label">Import backup<input id="import-data" type="file" accept="application/json" /></label>
+    </section>
+
+    <section class="card mileage" aria-labelledby="mileage-heading">
+      <div class="section-title" id="mileage-heading">🚗 Mileage tracker</div>
+      <form id="mileage-form" class="mileage-form">
+        <input name="date" type="date" />
+        <input required name="miles" type="number" step="0.1" min="0" placeholder="Miles" />
+        <input name="note" placeholder="Route note" />
+        <button class="primary" type="submit">Add miles</button>
+      </form>
+      <ul id="mileage-list"></ul>
+    </section>
+
+    <section class="areas" id="areas" aria-label="Patients grouped by city or area"></section>
   </main>
   <script type="module" src="src/main.js"></script>
 </body>
