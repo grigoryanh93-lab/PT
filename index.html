@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Home Health PT Scheduler</title>
+  <link rel="stylesheet" href="src/styles.css" />
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Home Health PT</p>
+        <h1>Weekly scheduling made simple</h1>
+        <p>Track patients, authorizations, visit frequency, and routes from an iPhone-friendly dashboard.</p>
+      </div>
+      <button id="reset-demo" type="button">Reset demo</button>
+    </header>
+    <section class="stats" aria-label="Patient statistics">
+      <div><span>👥</span><strong id="patient-count">0</strong><small>patients</small></div>
+      <div><span>📅</span><strong id="visit-count">0</strong><small>visits remaining</small></div>
+    </section>
+    <form class="card form" id="patient-form">
+      <div class="section-title">➕ Add patient</div>
+      <input required name="name" placeholder="Patient name" />
+      <input required name="area" placeholder="Area / neighborhood" />
+      <input required name="address" placeholder="Address" />
+      <input name="phone" placeholder="Phone number" />
+      <div class="grid-two">
+        <input min="0" type="number" name="visitsRemaining" placeholder="Visits" value="1" />
+        <select name="frequency"><option>1x/week</option><option>2x/week</option><option>3x/week</option><option>PRN</option></select>
+      </div>
+      <label>Authorization expiration<input type="date" name="authExpiration" /></label>
+      <textarea name="scheduleText" placeholder="Weekly schedule, one visit per line"></textarea>
+      <textarea name="notes" placeholder="Notes"></textarea>
+      <button class="primary" type="submit">💾 Save patient</button>
+    </form>
+    <section class="areas" id="areas"></section>
+  </main>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

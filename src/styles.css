@@ -1,0 +1,30 @@
+:root { color: #172033; background: #eef5f3; font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { width: min(100%, 760px); margin: 0 auto; padding: 18px; }
+.hero { background: linear-gradient(135deg, #0f766e, #155e75); color: white; border-radius: 28px; padding: 24px; display: flex; gap: 18px; justify-content: space-between; align-items: start; box-shadow: 0 18px 40px #0f766e33; }
+.eyebrow { margin: 0; letter-spacing: .14em; text-transform: uppercase; font-size: .75rem; opacity: .8; }
+h1 { margin: 6px 0; font-size: clamp(2rem, 9vw, 3.4rem); line-height: .95; }
+button, input, select, textarea { border: 0; border-radius: 16px; font: inherit; }
+button { padding: 12px 14px; font-weight: 700; cursor: pointer; }
+.primary { background: #0f766e; color: white; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 18px 0; }
+.stats div, .card { background: #ffffff; border: 1px solid #dbe7e4; border-radius: 24px; padding: 16px; box-shadow: 0 12px 28px #0f172a12; }
+.stats div { display: grid; gap: 4px; }
+.stats svg { color: #0f766e; }
+.stats strong { font-size: 2rem; }
+.form { display: grid; gap: 12px; margin-bottom: 22px; }
+.section-title, .patient-card p, .patient-card strong { display: flex; align-items: center; gap: 8px; }
+input, select, textarea { width: 100%; background: #f7fbfa; border: 1px solid #dbe7e4; padding: 13px; }
+textarea { min-height: 76px; resize: vertical; }
+label { color: #475569; font-size: .9rem; }
+.grid-two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.area h2 { margin: 22px 4px 10px; }
+.patient-card { margin-bottom: 12px; }
+.patient-header { display: flex; justify-content: space-between; gap: 12px; }
+.patient-header h3 { margin: 0; font-size: 1.25rem; }
+.patient-header p { margin: 4px 0 0; color: #64748b; }
+.patient-header span { background: #ecfeff; color: #155e75; border-radius: 999px; padding: 8px 10px; height: fit-content; font-size: .82rem; font-weight: 700; }
+ul { margin: 8px 0 0 24px; padding: 0; }
+a { color: #0f766e; font-weight: 700; }
+@media (max-width: 560px) { main { padding: 10px; } .hero { border-radius: 0 0 28px 28px; margin: -10px -10px 0; flex-direction: column; } .stats { position: sticky; top: 0; z-index: 1; } .grid-two { grid-template-columns: 1fr; } }
