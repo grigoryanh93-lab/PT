@@ -28,10 +28,15 @@ fieldset { border: 1px solid #dbe7e4; border-radius: 20px; padding: 12px; }
 .dashboard, .backup, .optimize, .therapist-admin { margin-bottom: 16px; }
 .today-list, .suggestions, .therapist-list { display: grid; gap: 10px; margin-top: 12px; }
 .visit, .slot, .suggestion, .therapist-row { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 18px; padding: 12px; display: grid; gap: 5px; }
-.visit.completed, .slot.completed { background: #dcfce7; }
-.visit.missed, .slot.missed { background: #fee2e2; }
+.visit.done, .slot.done { background: #dcfce7; }
+.visit.missed, .slot.missed, .visit.warning { background: #fee2e2; }
 .visit.cancelled, .slot.cancelled { background: #f1f5f9; color: #64748b; }
-.visit-controls { display: grid; grid-template-columns: 150px 1fr; gap: 8px; align-items: center; margin-top: 6px; }
+.visit.rescheduled, .slot.rescheduled { background: #fef3c7; }
+.visit-controls { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; align-items: center; margin-top: 6px; }
+.visit-controls small { grid-column: 1 / -1; color: #64748b; }
+.admin-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 12px; }
+.admin-stats div { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 10px; display: grid; }
+.warning-text { color: #b45309; font-weight: 900; }
 .calendar { display: grid; grid-template-columns: repeat(7, minmax(160px, 1fr)); gap: 10px; overflow-x: auto; padding: 12px 2px 2px; scroll-snap-type: x mandatory; }
 .day { min-width: 160px; scroll-snap-align: start; }
 .day h3 { margin: 0 0 8px; }
@@ -60,7 +65,7 @@ a { color: #0f766e; font-weight: 800; }
   .stats { position: sticky; top: 0; z-index: 2; grid-template-columns: repeat(3, 1fr); }
   .stats div { padding: 10px; }
   .stats strong { font-size: 1.35rem; }
-  .grid-two, .button-row, .actions, .login, .therapist-row, .visit-controls { grid-template-columns: 1fr; }
+  .grid-two, .button-row, .actions, .login, .therapist-row, .visit-controls, .admin-stats { grid-template-columns: 1fr; }
   .actions { grid-template-columns: repeat(2, 1fr); }
   .check-row { grid-template-columns: auto 1fr; }
   .check-row input[type="time"], .check-row select { grid-column: 1 / -1; }

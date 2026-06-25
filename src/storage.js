@@ -1,10 +1,14 @@
-export const STORAGE_KEY = 'home-health-pt-scheduler-v3';
-export const LEGACY_STORAGE_KEY = 'home-health-pt-scheduler-v2';
+export const STORAGE_KEY = 'home-health-pt-scheduler-v4';
+export const VISIT_LOGS_KEY = 'home-health-pt-visit-logs-v1';
+export const LEGACY_STORAGE_KEY = 'home-health-pt-scheduler-v3';
+export const OLDER_STORAGE_KEYS = ['home-health-pt-scheduler-v2', 'home-health-pt-scheduler-v1'];
 export const THERAPISTS_KEY = 'home-health-pt-therapists-v1';
 export const SESSION_KEY = 'home-health-pt-session-v1';
 
 export const WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-export const VISIT_STATUSES = ['scheduled', 'completed', 'missed', 'cancelled'];
+export const VISIT_STATUSES = ['scheduled', 'done', 'missed', 'cancelled', 'rescheduled'];
+export const VISIT_STATUS_LABELS = { scheduled: 'Scheduled', done: 'Done', missed: 'Missed', cancelled: 'Cancelled', rescheduled: 'Rescheduled' };
+export const LOW_VISIT_WARNING_THRESHOLD = 2;
 
 export const initialTherapists = [
   { id: 't-admin', name: 'Admin User', phone: '(555) 010-0000', email: 'admin@pt.local', role: 'admin', active: true },
@@ -28,8 +32,8 @@ export const initialPatients = [
     authExpiration: '2026-07-31',
     notes: 'Prefers morning visits. Has two steps at entry.',
     schedule: [
-      { id: 'v-101-a', day: 'Monday', time: '09:00', status: 'scheduled', therapistId: 't-amy', completedBy: '' },
-      { id: 'v-101-b', day: 'Thursday', time: '10:30', status: 'scheduled', therapistId: 't-amy', completedBy: '' },
+      { id: 'v-101-a', day: 'Monday', time: '09:00', status: 'scheduled', therapistId: 't-amy', completedBy: '', completedAt: '', note: '' },
+      { id: 'v-101-b', day: 'Thursday', time: '10:30', status: 'scheduled', therapistId: 't-amy', completedBy: '', completedAt: '', note: '' },
     ],
   },
   {
@@ -46,25 +50,48 @@ export const initialPatients = [
     preferredTimes: 'Afternoon',
     authExpiration: '2026-07-12',
     notes: 'Call daughter before arrival.',
-    schedule: [{ id: 'v-102-a', day: 'Wednesday', time: '13:00', status: 'scheduled', therapistId: 't-ben', completedBy: '' }],
+    schedule: [{ id: 'v-102-a', day: 'Wednesday', time: '13:00', status: 'scheduled', therapistId: 't-ben', completedBy: '', completedAt: '', note: '' }],
   },
 ];
 
 const makeId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+export function normalizeVisitStatus(status = 'scheduled') {
+  if (status === 'completed') return 'done';
+  return VISIT_STATUSES.includes(status) ? status : 'scheduled';
+}
+
+export function formatDateKey(date = new Date()) {
+  return date.toISOString().slice(0, 10);
+}
+
+export function getVisitDateForDay(day, today = new Date()) {
+  const targetIndex = WEEK_DAYS.indexOf(day);
+  if (targetIndex < 0) return formatDateKey(today);
+  const mondayBasedToday = (today.getDay() + 6) % 7;
+  const date = new Date(today);
+  date.setHours(12, 0, 0, 0);
+  let delta = targetIndex - mondayBasedToday;
+  if (delta < 0) delta += 7;
+  date.setDate(date.getDate() + delta);
+  return formatDateKey(date);
+}
+
 export function normalizeSchedule(schedule = [], patient = {}) {
   return schedule.map((visit) => {
     if (typeof visit === 'string') {
       const [day = 'Monday', ...rest] = visit.split(' ');
-      return { id: makeId('v'), day, time: rest.join(' ') || '', status: 'scheduled', therapistId: patient.therapistId || '', completedBy: '' };
+      return { id: makeId('v'), day, time: rest.join(' ') || '', status: 'scheduled', therapistId: patient.therapistId || '', completedBy: '', completedAt: '', note: '' };
     }
     return {
       id: visit.id || makeId('v'),
       day: visit.day || 'Monday',
       time: visit.time || '',
-      status: VISIT_STATUSES.includes(visit.status) ? visit.status : 'scheduled',
+      status: normalizeVisitStatus(visit.status),
       therapistId: visit.therapistId || patient.therapistId || '',
       completedBy: visit.completedBy || '',
+      completedAt: visit.completedAt || '',
+      note: visit.note || '',
     };
   });
 }
@@ -97,7 +124,7 @@ export function normalizeTherapist(therapist) {
 export function loadPatients(storage = globalThis.localStorage) {
   if (!storage) return initialPatients.map(normalizePatient);
   try {
-    const raw = storage.getItem(STORAGE_KEY) || storage.getItem(LEGACY_STORAGE_KEY) || storage.getItem('home-health-pt-scheduler-v1');
+    const raw = storage.getItem(STORAGE_KEY) || storage.getItem(LEGACY_STORAGE_KEY) || OLDER_STORAGE_KEYS.map((key) => storage.getItem(key)).find(Boolean);
     const parsed = raw ? JSON.parse(raw) : initialPatients;
     return Array.isArray(parsed) ? parsed.map(normalizePatient) : initialPatients.map(normalizePatient);
   } catch {
@@ -227,4 +254,126 @@ export function buildScheduleSuggestions(patient, patients, therapists) {
   });
 
   return options.sort((a, b) => b.score - a.score || a.day.localeCompare(b.day) || a.time.localeCompare(b.time)).slice(0, Math.max(3, needed));
+}
+
+
+export function normalizeVisitLog(log = {}) {
+  return {
+    id: log.id || makeId('log'),
+    patientId: log.patientId || '',
+    patientName: log.patientName || '',
+    therapistId: log.therapistId || '',
+    therapistName: log.therapistName || '',
+    visitId: log.visitId || '',
+    date: log.date || formatDateKey(new Date()),
+    scheduledDay: log.scheduledDay || '',
+    scheduledTime: log.scheduledTime || '',
+    completedTime: log.completedTime || log.timeCompleted || '',
+    status: normalizeVisitStatus(log.status || 'done'),
+    note: log.note || '',
+    source: log.source || 'localStorage',
+  };
+}
+
+export function loadVisitLogs(storage = globalThis.localStorage) {
+  if (!storage) return [];
+  try {
+    const parsed = JSON.parse(storage.getItem(VISIT_LOGS_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed.map(normalizeVisitLog) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveVisitLogs(logs, storage = globalThis.localStorage) {
+  if (!storage) return;
+  storage.setItem(VISIT_LOGS_KEY, JSON.stringify(logs.map(normalizeVisitLog)));
+}
+
+export function createVisitLog({ patient, visit, therapist, status = 'done', note = '', completedAt = new Date(), today = new Date() }) {
+  const completedTime = completedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return normalizeVisitLog({
+    id: makeId('log'),
+    patientId: patient.id,
+    patientName: patient.name,
+    therapistId: therapist.id,
+    therapistName: therapist.name,
+    visitId: visit.id,
+    date: formatDateKey(today),
+    scheduledDay: visit.day,
+    scheduledTime: visit.time || '',
+    completedTime,
+    status,
+    note,
+    source: 'localStorage',
+  });
+}
+
+export function upsertVisitLog(logs, nextLog) {
+  const normalized = normalizeVisitLog(nextLog);
+  const index = logs.findIndex((log) => log.visitId === normalized.visitId && log.date === normalized.date);
+  if (index === -1) return [...logs, normalized];
+  return logs.map((log, currentIndex) => (currentIndex === index ? { ...log, ...normalized, id: log.id } : log));
+}
+
+export function getVisitLogHistory(patient, logs = []) {
+  return logs.filter((log) => log.patientId === patient.id).sort((a, b) => `${b.date} ${b.completedTime}`.localeCompare(`${a.date} ${a.completedTime}`));
+}
+
+export function getLastSeenDate(patient, logs = []) {
+  return getVisitLogHistory(patient, logs).find((log) => log.status === 'done')?.date || '';
+}
+
+export function getNextScheduledVisit(patient, today = new Date()) {
+  return normalizeSchedule(patient.schedule, patient)
+    .filter((visit) => visit.status === 'scheduled' || visit.status === 'rescheduled')
+    .map((visit) => ({ ...visit, date: getVisitDateForDay(visit.day, today) }))
+    .filter((visit) => visit.date >= formatDateKey(today))
+    .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))[0] || null;
+}
+
+export function getAdminVisitSummary(patients, logs = [], today = new Date()) {
+  const todayKey = formatDateKey(today);
+  const todayVisits = getTodaysVisits(patients, today);
+  const completedToday = todayVisits.filter((visit) => visit.status === 'done').length + logs.filter((log) => log.date === todayKey && log.status === 'done' && !todayVisits.some((visit) => visit.id === log.visitId)).length;
+  const notCompletedToday = todayVisits.filter((visit) => visit.status !== 'done').length;
+  return {
+    completedToday,
+    notCompletedToday,
+    missed: todayVisits.filter((visit) => visit.status === 'missed').length,
+    cancelled: todayVisits.filter((visit) => visit.status === 'cancelled').length,
+    overduePatients: getNeedsToBeSeenPatients(patients, logs, today).filter((item) => item.reasons.some((reason) => reason.includes('Overdue'))).length,
+  };
+}
+
+export function getNeedsToBeSeenPatients(patients, logs = [], today = new Date()) {
+  const todayVisits = getTodaysVisits(patients, today);
+  const todayPatientIds = new Set(todayVisits.filter((visit) => visit.status !== 'done').map((visit) => visit.patient.id));
+  const todayKey = formatDateKey(today);
+  return patients.map((patient) => {
+    const reasons = [];
+    if (todayPatientIds.has(patient.id)) reasons.push('Scheduled today but not Done');
+    const lastSeen = getLastSeenDate(patient, logs);
+    const maxDays = Math.ceil(7 / Math.max(1, getFrequencyCount(patient.frequency)));
+    if (Number(patient.visitsRemaining || 0) > 0) {
+      if (!lastSeen) reasons.push('Overdue: no completed visit logged');
+      else {
+        const daysSince = Math.floor((new Date(`${todayKey}T12:00:00`) - new Date(`${lastSeen}T12:00:00`)) / 86_400_000);
+        if (daysSince > maxDays) reasons.push(`Overdue: last seen ${daysSince} days ago`);
+      }
+      if (!getNextScheduledVisit(patient, today)) reasons.push('Remaining visits but no upcoming schedule');
+    }
+    return { patient, reasons, lastSeen, nextScheduled: getNextScheduledVisit(patient, today) };
+  }).filter((item) => item.reasons.length > 0);
+}
+
+export function filterVisits(patients, filters = {}, logs = [], today = new Date()) {
+  const allVisits = patients.flatMap((patient) => normalizeSchedule(patient.schedule, patient).map((visit) => ({ ...visit, patient, date: getVisitDateForDay(visit.day, today) })));
+  return allVisits.filter((visit) => {
+    if (filters.therapistId && visit.therapistId !== filters.therapistId) return false;
+    if (filters.patientId && visit.patient.id !== filters.patientId) return false;
+    if (filters.status && visit.status !== filters.status) return false;
+    if (filters.date && visit.date !== filters.date) return false;
+    return true;
+  });
 }
