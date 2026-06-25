@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildScheduleSuggestions, canSeePatient, getAuthorizationStatus, getTodaysVisits, getWeeklySchedule, groupPatientsByArea, loadPatients, loadTherapists, savePatients, saveTherapists, STORAGE_KEY, THERAPISTS_KEY } from '../src/storage.js';
+import { VISIT_LOGS_KEY, buildScheduleSuggestions, canSeePatient, createVisitLog, filterVisits, getAdminVisitSummary, getAuthorizationStatus, getLastSeenDate, getNeedsToBeSeenPatients, getNextScheduledVisit, getTodaysVisits, getWeeklySchedule, groupPatientsByArea, loadPatients, loadTherapists, loadVisitLogs, savePatients, saveTherapists, saveVisitLogs, STORAGE_KEY, THERAPISTS_KEY, upsertVisitLog } from '../src/storage.js';
 
 test('groups patients by area with an unassigned fallback', () => {
   const grouped = groupPatientsByArea([{ name: 'A', area: 'North' }, { name: 'B', area: ' ' }]);
@@ -36,11 +36,11 @@ test('filters patients by admin and therapist permissions', () => {
 });
 
 test('finds today visits and builds weekly schedule', () => {
-  const patients = [{ id: '1', name: 'A', therapistId: 't-1', schedule: [{ day: 'Wednesday', time: '09:00', status: 'completed' }] }];
+  const patients = [{ id: '1', name: 'A', therapistId: 't-1', schedule: [{ day: 'Wednesday', time: '09:00', status: 'done' }] }];
   const today = new Date('2026-06-24T12:00:00Z');
   assert.equal(getTodaysVisits(patients, today).length, 1);
   assert.equal(getWeeklySchedule(patients).Wednesday[0].patient.name, 'A');
-  assert.equal(getWeeklySchedule(patients).Wednesday[0].status, 'completed');
+  assert.equal(getWeeklySchedule(patients).Wednesday[0].status, 'done');
 });
 
 test('reports authorization expiration alerts', () => {
@@ -70,4 +70,49 @@ test('schedule optimizer penalizes exact therapist conflicts and explains weekly
   const options = buildScheduleSuggestions(patient, patients, therapists);
   assert.notEqual(options[0].time, '09:00');
   assert.match(options[0].reason, /2 weekly visits still needed/);
+});
+
+
+test('creates and persists visit logs for done visits', () => {
+  const memory = new Map();
+  const storage = { getItem: (key) => memory.get(key), setItem: (key, value) => memory.set(key, value) };
+  const patient = { id: 'p-1', name: 'Patient A' };
+  const visit = { id: 'v-1', day: 'Thursday', time: '10:00' };
+  const therapist = { id: 't-1', name: 'Therapist A' };
+  const log = createVisitLog({ patient, visit, therapist, note: 'Gait training', completedAt: new Date('2026-06-25T14:15:00Z'), today: new Date('2026-06-25T12:00:00Z') });
+  saveVisitLogs(upsertVisitLog([], log), storage);
+  assert.equal(memory.has(VISIT_LOGS_KEY), true);
+  const loaded = loadVisitLogs(storage)[0];
+  assert.equal(loaded.patientName, 'Patient A');
+  assert.equal(loaded.therapistName, 'Therapist A');
+  assert.equal(loaded.date, '2026-06-25');
+  assert.equal(loaded.status, 'done');
+  assert.equal(loaded.note, 'Gait training');
+});
+
+test('summarizes admin visit dashboard and filters visits', () => {
+  const patients = [
+    { id: 'p-1', name: 'A', therapistId: 't-1', visitsRemaining: 1, frequency: '1x/week', schedule: [{ id: 'v-1', day: 'Thursday', time: '09:00', status: 'done', therapistId: 't-1' }] },
+    { id: 'p-2', name: 'B', therapistId: 't-2', visitsRemaining: 1, frequency: '1x/week', schedule: [{ id: 'v-2', day: 'Thursday', time: '10:00', status: 'missed', therapistId: 't-2' }] },
+  ];
+  const today = new Date('2026-06-25T12:00:00Z');
+  const summary = getAdminVisitSummary(patients, [], today);
+  assert.equal(summary.completedToday, 1);
+  assert.equal(summary.notCompletedToday, 1);
+  assert.equal(summary.missed, 1);
+  assert.equal(filterVisits(patients, { therapistId: 't-2', status: 'missed', date: '2026-06-25' }, [], today)[0].patient.name, 'B');
+});
+
+test('tracks last seen, next scheduled visit, and needs-to-be-seen reasons', () => {
+  const today = new Date('2026-06-25T12:00:00Z');
+  const patients = [
+    { id: 'p-1', name: 'A', therapistId: 't-1', visitsRemaining: 2, frequency: '2x/week', schedule: [{ id: 'v-1', day: 'Thursday', time: '09:00', status: 'scheduled', therapistId: 't-1' }] },
+    { id: 'p-2', name: 'B', therapistId: 't-1', visitsRemaining: 1, frequency: '1x/week', schedule: [] },
+  ];
+  const logs = [{ patientId: 'p-1', patientName: 'A', therapistId: 't-1', therapistName: 'Therapist', visitId: 'old', date: '2026-06-18', status: 'done' }];
+  assert.equal(getLastSeenDate(patients[0], logs), '2026-06-18');
+  assert.equal(getNextScheduledVisit(patients[0], today).date, '2026-06-25');
+  const needsSeen = getNeedsToBeSeenPatients(patients, logs, today);
+  assert.equal(needsSeen.some((item) => item.patient.id === 'p-1' && item.reasons.includes('Scheduled today but not Done')), true);
+  assert.equal(needsSeen.some((item) => item.patient.id === 'p-2' && item.reasons.includes('Remaining visits but no upcoming schedule')), true);
 });

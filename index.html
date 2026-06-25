@@ -33,6 +33,23 @@
       <div id="today-list" class="today-list"></div>
     </section>
 
+
+    <section class="card admin-dashboard" id="admin-dashboard" aria-labelledby="admin-heading" hidden>
+      <div class="section-title" id="admin-heading">📊 Admin visit dashboard</div>
+      <div id="admin-stats" class="admin-stats"></div>
+      <form id="visit-filters" class="form compact-form visit-filters">
+        <div class="grid-two"><select name="therapistId" aria-label="Filter by therapist"></select><select name="patientId" aria-label="Filter by patient"></select></div>
+        <div class="grid-two"><input name="date" type="date" aria-label="Filter by date" /><select name="status" aria-label="Filter by status"></select></div>
+      </form>
+      <div id="visit-filter-list" class="today-list"></div>
+    </section>
+
+    <section class="card needs-seen" aria-labelledby="needs-seen-heading">
+      <div class="section-title" id="needs-seen-heading">🚨 Needs to be seen</div>
+      <p class="empty">Patients scheduled today but not Done, overdue by frequency, or without an upcoming schedule.</p>
+      <div id="needs-seen-list" class="today-list"></div>
+    </section>
+
     <section class="card" aria-labelledby="calendar-heading">
       <div class="section-title" id="calendar-heading">🗓️ Weekly calendar</div>
       <div id="calendar" class="calendar"></div>
