@@ -66,3 +66,8 @@ a { color: #0f766e; font-weight: 800; }
   .check-row input[type="time"], .check-row select { grid-column: 1 / -1; }
   button, input, select, textarea { min-height: 48px; }
 }
+.app-feedback { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 20; width: min(92vw, 520px); background: #0f766e; color: white; border-radius: 999px; padding: 13px 18px; text-align: center; font-weight: 900; box-shadow: 0 18px 38px #0f172a33; opacity: 1; transition: opacity .2s ease, transform .2s ease; }
+.app-feedback.error { background: #b91c1c; }
+.app-feedback.hiding { opacity: 0; transform: translate(-50%, 8px); pointer-events: none; }
+.empty.error { color: #b91c1c; font-weight: 800; }
+.suggestion strong { color: #0f766e; }
