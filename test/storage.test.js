@@ -56,3 +56,18 @@ test('suggests optimized options that prioritize nearby patients and assigned th
   assert.equal(options[0].day, 'Monday');
   assert.match(options[0].reason, /nearby/);
 });
+
+test('returns no schedule suggestions without an active assigned therapist', () => {
+  const patient = { id: 'p-1', therapistId: 't-1', visitsRemaining: 1, frequency: '1x/week', schedule: [] };
+  assert.deepEqual(buildScheduleSuggestions(patient, [patient], [{ id: 't-1', active: false }]), []);
+  assert.deepEqual(buildScheduleSuggestions({ ...patient, therapistId: '' }, [patient], [{ id: 't-1', active: true }]), []);
+});
+
+test('schedule optimizer penalizes exact therapist conflicts and explains weekly need', () => {
+  const therapists = [{ id: 't-1', name: 'Therapist', active: true }];
+  const patient = { id: 'p-1', name: 'New', area: 'North', therapistId: 't-1', frequency: '2x/week', visitsRemaining: 2, preferredDays: ['Monday'], preferredTimes: 'Morning', schedule: [] };
+  const patients = [patient, { id: 'p-2', area: 'North', therapistId: 't-1', schedule: [{ day: 'Monday', time: '09:00', therapistId: 't-1', status: 'scheduled' }] }];
+  const options = buildScheduleSuggestions(patient, patients, therapists);
+  assert.notEqual(options[0].time, '09:00');
+  assert.match(options[0].reason, /2 weekly visits still needed/);
+});

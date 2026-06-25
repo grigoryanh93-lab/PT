@@ -192,21 +192,39 @@ function preferredTimeSlots(preferredTimes = '') {
 }
 
 export function buildScheduleSuggestions(patient, patients, therapists) {
+  if (!patient?.id || !patient.therapistId) return [];
   const activeTherapist = therapists.find((therapist) => therapist.id === patient.therapistId && therapist.active);
   if (!activeTherapist) return [];
-  const needed = Math.max(0, Math.min(Number(patient.visitsRemaining || 0), getFrequencyCount(patient.frequency)) - normalizeSchedule(patient.schedule, patient).filter((visit) => visit.status === 'scheduled').length);
+
+  const weeklyTarget = Math.min(Number(patient.visitsRemaining || 0), getFrequencyCount(patient.frequency));
+  const scheduledVisits = normalizeSchedule(patient.schedule, patient).filter((visit) => visit.status === 'scheduled');
+  const needed = Math.max(1, weeklyTarget - scheduledVisits.length);
   const preferredDays = patient.preferredDays?.length ? patient.preferredDays : WEEK_DAYS;
   const times = preferredTimeSlots(patient.preferredTimes);
+  const area = String(patient.area || '').trim().toLowerCase();
   const options = [];
-  preferredDays.forEach((day) => {
+
+  WEEK_DAYS.forEach((day) => {
     times.forEach((time) => {
-      const sameDay = patients.flatMap((candidate) => normalizeSchedule(candidate.schedule, candidate).filter((visit) => visit.day === day).map((visit) => ({ visit, patient: candidate })));
-      const nearby = sameDay.filter((item) => item.patient.area?.toLowerCase() === patient.area?.toLowerCase()).length;
-      const therapistLoad = sameDay.filter((item) => item.visit.therapistId === patient.therapistId).length;
-      const exactBusy = sameDay.some((item) => item.visit.therapistId === patient.therapistId && item.visit.time === time);
-      const score = (nearby * 30) - (therapistLoad * 6) - (exactBusy ? 50 : 0) + (preferredDays.includes(day) ? 10 : 0);
-      options.push({ day, time, therapistId: patient.therapistId, score, reason: `${nearby} nearby in ${patient.area || 'area'} · ${therapistLoad} visits for ${activeTherapist.name}` });
+      const sameDay = patients.flatMap((candidate) => normalizeSchedule(candidate.schedule, candidate)
+        .filter((visit) => visit.day === day && visit.status !== 'cancelled')
+        .map((visit) => ({ visit, patient: candidate })));
+      const therapistVisits = sameDay.filter((item) => item.visit.therapistId === patient.therapistId);
+      const nearby = therapistVisits.filter((item) => String(item.patient.area || '').trim().toLowerCase() === area && item.patient.id !== patient.id).length;
+      const exactBusy = therapistVisits.some((item) => item.visit.time === time);
+      const alreadyScheduledThatDay = scheduledVisits.some((visit) => visit.day === day);
+      const preferredDay = preferredDays.includes(day);
+      const score = (nearby * 35) + (preferredDay ? 18 : -8) - (therapistVisits.length * 5) - (exactBusy ? 80 : 0) - (alreadyScheduledThatDay ? 45 : 0);
+      const reasons = [
+        preferredDay ? 'matches preferred day' : 'outside preferred days',
+        `${nearby} nearby ${area || 'area'} visit${nearby === 1 ? '' : 's'}`,
+        `${therapistVisits.length} existing ${activeTherapist.name} visit${therapistVisits.length === 1 ? '' : 's'} that day`,
+        `${needed} weekly visit${needed === 1 ? '' : 's'} still needed`,
+      ];
+      if (exactBusy) reasons.push('therapist is already busy at that time');
+      options.push({ day, time, therapistId: patient.therapistId, score, reason: reasons.join(' · ') });
     });
   });
-  return options.sort((a, b) => b.score - a.score).slice(0, Math.max(3, needed || 3));
+
+  return options.sort((a, b) => b.score - a.score || a.day.localeCompare(b.day) || a.time.localeCompare(b.time)).slice(0, Math.max(3, needed));
 }

@@ -46,6 +46,33 @@ const optimizeButton = $('#optimize-button');
 const suggestions = $('#suggestions');
 
 const id = (prefix) => globalThis.crypto?.randomUUID?.() || `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+function showFeedback(message, type = 'success') {
+  let notice = $('#app-feedback');
+  if (!notice) {
+    notice = document.createElement('div');
+    notice.id = 'app-feedback';
+    notice.setAttribute('role', 'status');
+    notice.setAttribute('aria-live', 'polite');
+    document.body.append(notice);
+  }
+  notice.className = `app-feedback ${type}`;
+  notice.textContent = message;
+  clearTimeout(showFeedback.timeout);
+  showFeedback.timeout = setTimeout(() => { notice.classList.add('hiding'); }, 3200);
+}
+
+function runAction(label, action) {
+  try {
+    const result = action();
+    if (label) showFeedback(label);
+    return result;
+  } catch (error) {
+    console.error(`Action failed: ${label || 'unlabeled action'}`, error);
+    showFeedback(error.message || 'Something went wrong. Please try again.', 'error');
+    return undefined;
+  }
+}
 const currentUser = () => therapists.find((therapist) => therapist.id === currentUserId) || therapists[0];
 const visiblePatients = () => getVisiblePatients(patients, currentUser());
 const therapistName = (therapistId) => therapists.find((therapist) => therapist.id === therapistId)?.name || 'Unassigned';
@@ -132,7 +159,10 @@ function renderTherapists() {
 }
 
 function renderOptimize() {
-  optimizePatient.innerHTML = visiblePatients().map((patient) => `<option value="${patient.id}">${escapeHtml(patient.name)} · ${escapeHtml(patient.area)}</option>`).join('');
+  const shown = visiblePatients();
+  optimizePatient.innerHTML = shown.length
+    ? '<option value="">Select patient to optimize…</option>' + shown.map((patient) => `<option value="${patient.id}">${escapeHtml(patient.name)} · ${escapeHtml(patient.area)} · ${escapeHtml(therapistName(patient.therapistId))}</option>`).join('')
+    : '<option value="">No visible patients</option>';
 }
 
 function render() {
@@ -171,44 +201,66 @@ function resetForm() {
   $('#preferred-days').innerHTML = preferredDayFields(); $('#schedule-fields').innerHTML = scheduleFields(); renderTherapists();
 }
 
-form.addEventListener('submit', (event) => { event.preventDefault(); const patient = readPatientFromForm(); patients = editingId ? patients.map((item) => (item.id === editingId ? patient : item)) : [...patients, patient]; savePatients(patients); resetForm(); render(); });
+form.addEventListener('submit', (event) => { event.preventDefault(); runAction(editingId ? 'Patient updated.' : 'Patient saved.', () => { const patient = readPatientFromForm(); patients = editingId ? patients.map((item) => (item.id === editingId ? patient : item)) : [...patients, patient]; savePatients(patients); resetForm(); render(); }); });
 
-therapistForm.addEventListener('submit', (event) => { event.preventDefault(); const data = new FormData(therapistForm); therapists = [...therapists, { id: id('t'), name: data.get('name'), phone: data.get('phone'), email: data.get('email'), role: data.get('role'), active: data.get('active') === 'on' }]; saveTherapists(therapists); therapistForm.reset(); therapistForm.elements.active.checked = true; render(); });
+therapistForm.addEventListener('submit', (event) => { event.preventDefault(); runAction('Therapist saved.', () => { const data = new FormData(therapistForm); therapists = [...therapists, { id: id('t'), name: data.get('name'), phone: data.get('phone'), email: data.get('email'), role: data.get('role'), active: data.get('active') === 'on' }]; saveTherapists(therapists); therapistForm.reset(); therapistForm.elements.active.checked = true; render(); }); });
 
-userSelect.addEventListener('change', () => { currentUserId = userSelect.value; saveSession(currentUserId); resetForm(); render(); });
+userSelect.addEventListener('change', () => runAction('User view changed.', () => { currentUserId = userSelect.value; saveSession(currentUserId); resetForm(); render(); }));
 
-optimizeButton.addEventListener('click', () => {
+optimizeButton.addEventListener('click', () => runAction('', () => {
   const patient = patients.find((item) => item.id === optimizePatient.value);
-  pendingSuggestions = patient ? buildScheduleSuggestions(patient, patients, therapists) : [];
-  suggestions.innerHTML = pendingSuggestions.length ? pendingSuggestions.map((option, index) => `<article class="suggestion"><strong>${escapeHtml(option.day)} at ${escapeHtml(formatTime(option.time))}</strong><span>${escapeHtml(option.reason)}</span><div class="button-row"><button class="primary" data-apply-suggestion="${index}" type="button">Approve</button><button data-edit-suggestion="${index}" type="button">Edit time</button></div></article>`).join('') : '<p class="empty">No suggestion available. Assign an active therapist first.</p>';
-});
+  if (!patient) {
+    pendingSuggestions = [];
+    suggestions.innerHTML = '<p class="empty error">Select a patient before optimizing.</p>';
+    showFeedback('Select a patient before optimizing.', 'error');
+    return;
+  }
+  if (!therapists.find((therapist) => therapist.id === patient.therapistId && therapist.active)) {
+    pendingSuggestions = [];
+    suggestions.innerHTML = `<p class="empty error">${escapeHtml(patient.name)} needs an active assigned therapist before optimization.</p>`;
+    showFeedback('Assign an active therapist before optimizing.', 'error');
+    return;
+  }
+  pendingSuggestions = buildScheduleSuggestions(patient, patients, therapists);
+  suggestions.innerHTML = pendingSuggestions.length ? pendingSuggestions.map((option, index) => `<article class="suggestion"><strong>${escapeHtml(option.day)} at ${escapeHtml(formatTime(option.time))}</strong><span>${escapeHtml(option.reason)}</span><div class="button-row"><button class="primary" data-apply-suggestion="${index}" type="button">Apply Suggestion</button><button data-edit-suggestion="${index}" type="button">Edit & Apply</button></div></article>`).join('') : '<p class="empty error">No suggestion available for this patient.</p>';
+  showFeedback(`${pendingSuggestions.length} schedule suggestion${pendingSuggestions.length === 1 ? '' : 's'} generated.`);
+}));
 
 document.addEventListener('click', (event) => {
-  const editId = event.target.dataset.edit; const deleteId = event.target.dataset.delete; const toggleTherapist = event.target.dataset.toggleTherapist; const applySuggestion = event.target.dataset.applySuggestion; const editSuggestion = event.target.dataset.editSuggestion;
-  if (editId) fillForm(patients.find((patient) => patient.id === editId));
-  if (deleteId && confirm('Delete this patient?')) { patients = patients.filter((patient) => patient.id !== deleteId); savePatients(patients); render(); }
-  if (toggleTherapist) { therapists = therapists.map((therapist) => therapist.id === toggleTherapist ? { ...therapist, active: !therapist.active } : therapist); saveTherapists(therapists); render(); }
-  if (applySuggestion || editSuggestion) {
-    const option = pendingSuggestions[Number(applySuggestion ?? editSuggestion)]; const patientId = optimizePatient.value; if (!option) return;
-    const time = editSuggestion ? prompt('Edit suggested time (HH:MM)', option.time) || option.time : option.time;
+  const target = event.target.closest('button[data-edit], button[data-delete], button[data-toggle-therapist], button[data-apply-suggestion], button[data-edit-suggestion], a.action');
+  if (!target) return;
+  const { edit: editId, delete: deleteId, toggleTherapist, applySuggestion, editSuggestion } = target.dataset;
+  if (target.matches('a.action')) showFeedback(`${target.textContent.trim()} opened.`);
+  if (editId) runAction('Patient loaded for editing.', () => fillForm(patients.find((patient) => patient.id === editId)));
+  if (deleteId && confirm('Delete this patient?')) runAction('Patient deleted.', () => { patients = patients.filter((patient) => patient.id !== deleteId); savePatients(patients); render(); });
+  if (toggleTherapist) runAction('Therapist status updated.', () => { therapists = therapists.map((therapist) => therapist.id === toggleTherapist ? { ...therapist, active: !therapist.active } : therapist); saveTherapists(therapists); render(); });
+  if (applySuggestion !== undefined || editSuggestion !== undefined) runAction('Schedule suggestion applied.', () => {
+    const suggestionIndex = Number(applySuggestion ?? editSuggestion);
+    const option = pendingSuggestions[suggestionIndex];
+    const patientId = optimizePatient.value;
+    if (!patientId) throw new Error('Select a patient before applying a suggestion.');
+    if (!option) throw new Error('That schedule suggestion is no longer available. Run Optimize Schedule again.');
+    const time = editSuggestion !== undefined ? prompt('Edit suggested time (HH:MM)', option.time) || option.time : option.time;
     patients = patients.map((patient) => patient.id === patientId ? { ...patient, schedule: [...patient.schedule, { id: id('v'), day: option.day, time, status: 'scheduled', therapistId: option.therapistId, completedBy: '' }] } : patient);
     savePatients(patients); suggestions.innerHTML = '<p class="empty">Suggestion applied. Review the calendar and edit the patient if needed.</p>'; render();
-  }
+  });
 });
 
 document.addEventListener('change', (event) => {
   const visitStatus = event.target.dataset.visitStatus;
   if (!visitStatus) return;
-  const [patientId, visitId] = visitStatus.split('|');
-  patients = patients.map((patient) => patient.id === patientId ? { ...patient, schedule: patient.schedule.map((visit) => visit.id === visitId ? { ...visit, status: event.target.value, completedBy: event.target.value === 'completed' ? currentUser().id : visit.completedBy } : visit) } : patient);
-  savePatients(patients); render();
+  runAction('Visit status updated.', () => {
+    const [patientId, visitId] = visitStatus.split('|');
+    patients = patients.map((patient) => patient.id === patientId ? { ...patient, schedule: patient.schedule.map((visit) => visit.id === visitId ? { ...visit, status: event.target.value, completedBy: event.target.value === 'completed' ? currentUser().id : visit.completedBy } : visit) } : patient);
+    savePatients(patients); render();
+  });
 });
 
-exportButton.addEventListener('click', () => { const blob = new Blob([JSON.stringify({ patients, therapists }, null, 2)], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `pt-scheduler-backup-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(link.href); });
+exportButton.addEventListener('click', () => runAction('Backup exported.', () => { const blob = new Blob([JSON.stringify({ patients, therapists }, null, 2)], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `pt-scheduler-backup-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(link.href); }));
 
-importInput.addEventListener('change', async () => { const file = importInput.files?.[0]; if (!file) return; const backup = JSON.parse(await file.text()); patients = Array.isArray(backup.patients) ? backup.patients : patients; therapists = Array.isArray(backup.therapists) ? backup.therapists : therapists; savePatients(patients); saveTherapists(therapists); importInput.value = ''; render(); });
+importInput.addEventListener('change', async () => { try { const file = importInput.files?.[0]; if (!file) return; const backup = JSON.parse(await file.text()); patients = Array.isArray(backup.patients) ? backup.patients : patients; therapists = Array.isArray(backup.therapists) ? backup.therapists : therapists; savePatients(patients); saveTherapists(therapists); importInput.value = ''; render(); showFeedback('Backup imported.'); } catch (error) { console.error('Import failed', error); showFeedback('Import failed. Choose a valid backup JSON file.', 'error'); } });
 
-cancelEdit.addEventListener('click', resetForm);
-resetButton.addEventListener('click', () => { patients = initialPatients; therapists = initialTherapists; currentUserId = 't-admin'; savePatients(patients); saveTherapists(therapists); saveSession(currentUserId); pendingSuggestions = []; suggestions.innerHTML = ''; resetForm(); render(); });
+cancelEdit.addEventListener('click', () => runAction('Edit cancelled.', resetForm));
+resetButton.addEventListener('click', () => runAction('Demo data reset.', () => { patients = initialPatients; therapists = initialTherapists; currentUserId = 't-admin'; savePatients(patients); saveTherapists(therapists); saveSession(currentUserId); pendingSuggestions = []; suggestions.innerHTML = ''; resetForm(); render(); }));
 
 resetForm(); render();
