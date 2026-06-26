@@ -76,3 +76,20 @@ a { color: #0f766e; font-weight: 800; }
 .app-feedback.hiding { opacity: 0; transform: translate(-50%, 8px); pointer-events: none; }
 .empty.error { color: #b91c1c; font-weight: 800; }
 .suggestion strong { color: #0f766e; }
+.import-patients { margin-bottom: 16px; }
+.file-button { position: relative; overflow: hidden; border-radius: 16px; padding: 12px 14px; font-weight: 800; cursor: pointer; min-height: 46px; }
+.file-button input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.import-errors { display: grid; gap: 8px; margin: 10px 0; }
+.import-errors .error-item, .import-errors .warning-item { border-radius: 14px; padding: 10px 12px; font-weight: 800; }
+.import-errors .error-item { background: #fee2e2; color: #991b1b; }
+.import-errors .warning-item { background: #fef3c7; color: #92400e; }
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 12px 0; }
+.preview-table { width: 100%; min-width: 880px; border-collapse: collapse; background: white; }
+.preview-table th, .preview-table td { border: 1px solid #dbe7e4; padding: 9px; text-align: left; vertical-align: top; }
+.preview-table th { background: #ecfeff; color: #155e75; position: sticky; top: 0; }
+.preview-table tr.has-error { background: #fff1f2; }
+.preview-table tr.is-duplicate { background: #f8fafc; color: #64748b; }
+@media (max-width: 620px) {
+  .file-button { width: 100%; text-align: center; }
+  .preview-table { font-size: .84rem; min-width: 760px; }
+}
