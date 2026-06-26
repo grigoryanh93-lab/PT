@@ -101,14 +101,36 @@
       <div class="button-row"><button class="primary" type="submit">💾 Save patient</button><button id="cancel-edit" type="button" hidden>Cancel edit</button></div>
     </form>
 
-    <section class="card backup" aria-labelledby="backup-heading">
+    <section class="card backup" id="backup-section" aria-labelledby="backup-heading" hidden>
       <div class="section-title" id="backup-heading">☁️ Backup export / import</div>
-      <button class="primary" id="export-data" type="button">Export backup</button>
+      <div class="button-row">
+        <button class="primary" id="export-data" type="button">Export JSON backup</button>
+        <button id="export-patients-csv" type="button">Export patients CSV</button>
+        <button id="export-patients-excel" type="button">Export patients Excel</button>
+      </div>
       <label class="import-label">Import backup<input id="import-data" type="file" accept="application/json" /></label>
+    </section>
+
+    <section class="card import-patients" id="patient-import-section" aria-labelledby="patient-import-heading" hidden>
+      <div class="section-title" id="patient-import-heading">📥 Import Patients</div>
+      <p class="empty">Admin-only bulk import. Upload CSV or Excel with Patient Name, Address, Phone, Area/City, Visits Remaining, Frequency, Authorization Expiration, Preferred Days, Preferred Time, Assigned Therapist, and Notes.</p>
+      <div class="button-row">
+        <label class="file-button primary">Choose CSV/Excel<input id="patient-import-file" type="file" accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" /></label>
+        <button id="sample-import" type="button">Test sample CSV</button>
+        <button id="photo-import" type="button">Import from image/photo — coming soon</button>
+      </div>
+      <p class="empty">Image/photo import will require OCR later to read text from pictures before patients can be previewed.</p>
+      <div id="patient-import-errors" class="import-errors" role="alert"></div>
+      <div id="patient-import-preview" class="table-wrap"></div>
+      <div class="button-row">
+        <button class="primary" id="confirm-patient-import" type="button" disabled>Confirm import</button>
+        <button id="clear-patient-import" type="button">Clear preview</button>
+      </div>
     </section>
 
     <section class="areas" id="areas" aria-label="Patients grouped by city or area"></section>
   </main>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script type="module" src="src/main.js"></script>
 </body>
 </html>

@@ -46,6 +46,7 @@ const scheduledCount = $('#scheduled-count');
 const todayList = $('#today-list');
 const calendar = $('#calendar');
 const exportButton = $('#export-data');
+const backupSection = $('#backup-section');
 const importInput = $('#import-data');
 const resetButton = $('#reset-demo');
 const formTitle = $('#form-title');
@@ -62,6 +63,17 @@ const adminStats = $('#admin-stats');
 const visitFilters = $('#visit-filters');
 const visitFilterList = $('#visit-filter-list');
 const needsSeenList = $('#needs-seen-list');
+const patientImportSection = $('#patient-import-section');
+const patientImportFile = $('#patient-import-file');
+const patientImportErrors = $('#patient-import-errors');
+const patientImportPreview = $('#patient-import-preview');
+const confirmPatientImport = $('#confirm-patient-import');
+const clearPatientImport = $('#clear-patient-import');
+const sampleImport = $('#sample-import');
+const photoImport = $('#photo-import');
+const exportPatientsCsv = $('#export-patients-csv');
+const exportPatientsExcel = $('#export-patients-excel');
+let pendingPatientImport = [];
 
 const id = (prefix) => globalThis.crypto?.randomUUID?.() || `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
@@ -144,6 +156,102 @@ function patientActions(patient) {
   </div>`;
 }
 
+const IMPORT_COLUMNS = ['Patient Name', 'Address', 'Phone', 'Area/City', 'Visits Remaining', 'Frequency', 'Authorization Expiration', 'Preferred Days', 'Preferred Time', 'Assigned Therapist', 'Notes'];
+const SAMPLE_CSV = `Patient Name,Address,Phone,Area/City,Visits Remaining,Frequency,Authorization Expiration,Preferred Days,Preferred Time,Assigned Therapist,Notes
+Sample Import Patient,"123 Test Ave, North Valley",(555) 010-9999,North Valley,6,2x/week,2026-08-15,"Monday; Thursday",Morning,"Amy Nguyen, PT",Sample CSV import row`;
+
+function normalizeHeader(value = '') {
+  return String(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let value = '';
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '"') {
+      if (quoted && text[index + 1] === '"') { value += '"'; index += 1; }
+      else quoted = !quoted;
+    } else if (char === ',' && !quoted) { row.push(value); value = ''; }
+    else if ((char === '\n' || char === '\r') && !quoted) {
+      if (char === '\r' && text[index + 1] === '\n') index += 1;
+      row.push(value); if (row.some((cell) => String(cell).trim())) rows.push(row); row = []; value = '';
+    } else value += char;
+  }
+  row.push(value); if (row.some((cell) => String(cell).trim())) rows.push(row);
+  return rows;
+}
+
+function csvEscape(value = '') {
+  const text = String(value ?? '');
+  return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function rowsToPatients(rows) {
+  const headers = rows[0]?.map(normalizeHeader) || [];
+  const aliases = {
+    name: ['patientname', 'name', 'patient'], address: ['address'], phone: ['phone', 'phonenumber'], area: ['areacity', 'area', 'city'],
+    visitsRemaining: ['visitsremaining', 'visits', 'remainingvisits'], frequency: ['frequency'], authExpiration: ['authorizationexpiration', 'authexpiration', 'authorizationexpires'],
+    preferredDays: ['preferreddays', 'days'], preferredTimes: ['preferredtime', 'preferredtimes', 'time'], therapist: ['assignedtherapist', 'therapist'], notes: ['notes', 'note'],
+  };
+  const columnIndex = (keys) => keys.map((key) => headers.indexOf(key)).find((index) => index >= 0);
+  const indexes = Object.fromEntries(Object.entries(aliases).map(([key, keys]) => [key, columnIndex(keys)]));
+  const seenKeys = new Set(patients.map(duplicateKey));
+  return rows.slice(1).map((row, rowIndex) => {
+    const read = (key) => indexes[key] >= 0 ? String(row[indexes[key]] || '').trim() : '';
+    const therapistText = read('therapist');
+    const therapist = therapists.find((item) => item.name.toLowerCase() === therapistText.toLowerCase()) || therapists.find((item) => item.name.toLowerCase().includes(therapistText.toLowerCase()) && therapistText);
+    const preferredDays = read('preferredDays').split(/[;,|]/).map((day) => day.trim()).filter(Boolean).map((day) => WEEK_DAYS.find((known) => known.toLowerCase().startsWith(day.toLowerCase())) || day);
+    const patient = { id: id('p'), name: read('name'), address: read('address'), phone: read('phone'), area: read('area'), visitsRemaining: Number(read('visitsRemaining') || 0), frequency: read('frequency') || '1x/week', authExpiration: read('authExpiration'), preferredDays, preferredTimes: read('preferredTimes'), therapistId: therapist?.id || '', notes: read('notes'), agency: '', schedule: [] };
+    const errors = [];
+    if (!patient.name) errors.push('Missing Patient Name');
+    if (!patient.address) errors.push('Missing Address');
+    if (!patient.area) errors.push('Missing Area/City');
+    const key = duplicateKey(patient);
+    const duplicate = seenKeys.has(key);
+    if (key !== '|') seenKeys.add(key);
+    return { rowNumber: rowIndex + 2, patient, errors, duplicate };
+  });
+}
+
+function duplicateKey(patient) {
+  return `${String(patient.name || '').trim().toLowerCase()}|${String(patient.address || '').trim().toLowerCase()}`;
+}
+
+function renderPatientImportPreview(items = pendingPatientImport) {
+  const errors = items.flatMap((item) => item.errors.map((error) => `Row ${item.rowNumber}: ${error}`));
+  const duplicateCount = items.filter((item) => item.duplicate).length;
+  patientImportErrors.innerHTML = [
+    ...errors.map((error) => `<div class="error-item">${escapeHtml(error)}</div>`),
+    ...(duplicateCount ? [`<div class="warning-item">${duplicateCount} duplicate patient${duplicateCount === 1 ? '' : 's'} detected by name + address and will be skipped.</div>`] : []),
+  ].join('');
+  patientImportPreview.innerHTML = items.length ? `<table class="preview-table"><thead><tr>${IMPORT_COLUMNS.map((column) => `<th>${escapeHtml(column)}</th>`).join('')}<th>Status</th></tr></thead><tbody>${items.map(({ patient, errors: rowErrors, duplicate }) => `<tr class="${rowErrors.length ? 'has-error' : duplicate ? 'is-duplicate' : ''}"><td>${escapeHtml(patient.name)}</td><td>${escapeHtml(patient.address)}</td><td>${escapeHtml(patient.phone)}</td><td>${escapeHtml(patient.area)}</td><td>${escapeHtml(patient.visitsRemaining)}</td><td>${escapeHtml(patient.frequency)}</td><td>${escapeHtml(patient.authExpiration)}</td><td>${escapeHtml(patient.preferredDays.join(', '))}</td><td>${escapeHtml(patient.preferredTimes)}</td><td>${escapeHtml(therapistName(patient.therapistId))}</td><td>${escapeHtml(patient.notes)}</td><td>${escapeHtml(rowErrors.join('; ') || (duplicate ? 'Duplicate - skipped' : 'Ready'))}</td></tr>`).join('')}</tbody></table>` : '<p class="empty">No patient import preview yet.</p>';
+  confirmPatientImport.disabled = !items.length || errors.length > 0 || !items.some((item) => !item.duplicate);
+}
+
+async function parsePatientImportFile(file) {
+  if (file.name.toLowerCase().endsWith('.xlsx')) {
+    if (!globalThis.XLSX) throw new Error('Excel import needs the SheetJS parser to load first. Check your connection and try again.');
+    const workbook = globalThis.XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    return globalThis.XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1, defval: '' });
+  }
+  return parseCsv(await file.text());
+}
+
+function exportPatients(format) {
+  const rows = [IMPORT_COLUMNS, ...patients.map((patient) => [patient.name, patient.address, patient.phone, patient.area, patient.visitsRemaining, patient.frequency, patient.authExpiration, patient.preferredDays?.join('; ') || '', patient.preferredTimes, therapistName(patient.therapistId), patient.notes])];
+  if (format === 'xlsx' && globalThis.XLSX) {
+    const workbook = globalThis.XLSX.utils.book_new();
+    globalThis.XLSX.utils.book_append_sheet(workbook, globalThis.XLSX.utils.aoa_to_sheet(rows), 'Patients');
+    globalThis.XLSX.writeFile(workbook, `pt-patients-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    return;
+  }
+  const blob = new Blob([rows.map((row) => row.map(csvEscape).join(',')).join('\n')], { type: 'text/csv' });
+  const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `pt-patients-${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(link.href);
+}
+
 function renderVisitControls(patient, visit) {
   return `<div class="visit-controls">
     <button type="button" class="primary" data-visit-action="done" data-patient-id="${patient.id}" data-visit-id="${visit.id}">Done</button>
@@ -186,6 +294,8 @@ function renderTherapists() {
   const user = currentUser();
   roleNote.textContent = user.role === 'admin' ? 'Admin view: all patients, schedules, and visit status.' : 'Therapist view: assigned patients only.';
   therapistAdmin.hidden = user.role !== 'admin';
+  patientImportSection.hidden = user.role !== 'admin';
+  backupSection.hidden = user.role !== 'admin';
   therapistList.innerHTML = therapists.map((therapist) => `<article class="therapist-row"><strong>${escapeHtml(therapist.name)}</strong><span>${escapeHtml(therapist.phone || 'No phone')}</span><span>${escapeHtml(therapist.email || 'No email')}</span><button data-toggle-therapist="${therapist.id}" type="button">${therapist.active ? 'Active' : 'Inactive'}</button></article>`).join('');
   form.elements.therapistId.innerHTML = therapistOptions(user.role === 'therapist' ? user.id : '');
   form.elements.therapistId.disabled = user.role !== 'admin';
@@ -259,11 +369,11 @@ function resetForm() {
   $('#preferred-days').innerHTML = preferredDayFields(); $('#schedule-fields').innerHTML = scheduleFields(); renderTherapists();
 }
 
-form.addEventListener('submit', (event) => { event.preventDefault(); runAction(editingId ? 'Patient updated.' : 'Patient saved.', () => { const patient = readPatientFromForm(); patients = editingId ? patients.map((item) => (item.id === editingId ? patient : item)) : [...patients, patient]; savePatients(patients); resetForm(); render(); }); });
+form.addEventListener('submit', (event) => { event.preventDefault(); runAction(editingId ? 'Patient updated.' : 'Patient saved.', () => { const patient = readPatientFromForm(); patients = editingId ? patients.map((item) => (item.id === editingId ? patient : item)) : [...patients, patient]; savePatients(patients); resetForm(); renderPatientImportPreview(); render(); }); });
 
 therapistForm.addEventListener('submit', (event) => { event.preventDefault(); runAction('Therapist saved.', () => { const data = new FormData(therapistForm); therapists = [...therapists, { id: id('t'), name: data.get('name'), phone: data.get('phone'), email: data.get('email'), role: data.get('role'), active: data.get('active') === 'on' }]; saveTherapists(therapists); therapistForm.reset(); therapistForm.elements.active.checked = true; render(); }); });
 
-userSelect.addEventListener('change', () => runAction('User view changed.', () => { currentUserId = userSelect.value; saveSession(currentUserId); resetForm(); render(); }));
+userSelect.addEventListener('change', () => runAction('User view changed.', () => { currentUserId = userSelect.value; saveSession(currentUserId); resetForm(); renderPatientImportPreview(); render(); }));
 visitFilters.addEventListener('change', () => renderAdminDashboard());
 
 optimizeButton.addEventListener('click', () => runAction('', () => {
@@ -339,11 +449,19 @@ document.addEventListener('change', (event) => {
   });
 });
 
+exportPatientsCsv.addEventListener('click', () => runAction('Patients CSV exported.', () => exportPatients('csv')));
+exportPatientsExcel.addEventListener('click', () => runAction('Patients Excel exported.', () => exportPatients('xlsx')));
+photoImport.addEventListener('click', () => showFeedback('Photo import will require OCR later and is coming soon.', 'error'));
+clearPatientImport.addEventListener('click', () => runAction('Import preview cleared.', () => { pendingPatientImport = []; patientImportFile.value = ''; renderPatientImportPreview(); }));
+sampleImport.addEventListener('click', () => runAction('Sample CSV parsed.', () => { pendingPatientImport = rowsToPatients(parseCsv(SAMPLE_CSV)); renderPatientImportPreview(); }));
+patientImportFile.addEventListener('change', async () => { try { const file = patientImportFile.files?.[0]; if (!file) return; pendingPatientImport = rowsToPatients(await parsePatientImportFile(file)); renderPatientImportPreview(); showFeedback('Patient import preview ready.'); } catch (error) { console.error('Patient import failed', error); showFeedback(error.message || 'Patient import failed.', 'error'); } });
+confirmPatientImport.addEventListener('click', () => runAction('Patients imported.', () => { if (currentUser().role !== 'admin') throw new Error('Only admins can import patients.'); const incoming = pendingPatientImport.filter((item) => !item.duplicate && !item.errors.length).map((item) => item.patient); patients = [...patients, ...incoming]; savePatients(patients); pendingPatientImport = []; patientImportFile.value = ''; renderPatientImportPreview(); render(); }));
+
 exportButton.addEventListener('click', () => runAction('Backup exported.', () => { const blob = new Blob([JSON.stringify({ patients, therapists, visitLogs }, null, 2)], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `pt-scheduler-backup-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(link.href); }));
 
 importInput.addEventListener('change', async () => { try { const file = importInput.files?.[0]; if (!file) return; const backup = JSON.parse(await file.text()); patients = Array.isArray(backup.patients) ? backup.patients : patients; therapists = Array.isArray(backup.therapists) ? backup.therapists : therapists; visitLogs = Array.isArray(backup.visitLogs) ? backup.visitLogs : visitLogs; saveVisitLogs(visitLogs); savePatients(patients); saveTherapists(therapists); importInput.value = ''; render(); showFeedback('Backup imported.'); } catch (error) { console.error('Import failed', error); showFeedback('Import failed. Choose a valid backup JSON file.', 'error'); } });
 
 cancelEdit.addEventListener('click', () => runAction('Edit cancelled.', resetForm));
-resetButton.addEventListener('click', () => runAction('Demo data reset.', () => { patients = initialPatients; therapists = initialTherapists; visitLogs = []; currentUserId = 't-admin'; savePatients(patients); saveTherapists(therapists); saveVisitLogs(visitLogs); saveSession(currentUserId); pendingSuggestions = []; suggestions.innerHTML = ''; resetForm(); render(); }));
+resetButton.addEventListener('click', () => runAction('Demo data reset.', () => { patients = initialPatients; therapists = initialTherapists; visitLogs = []; currentUserId = 't-admin'; savePatients(patients); saveTherapists(therapists); saveVisitLogs(visitLogs); saveSession(currentUserId); pendingSuggestions = []; suggestions.innerHTML = ''; resetForm(); renderPatientImportPreview(); render(); }));
 
-resetForm(); render();
+resetForm(); renderPatientImportPreview(); render();
