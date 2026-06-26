@@ -34,6 +34,9 @@ let therapists = loadTherapists();
 let visitLogs = loadVisitLogs();
 let currentUserId = loadSession();
 let editingId = null;
+let editingTherapistId = null;
+let editingAppointment = null;
+let activePage = localStorage.getItem('home-health-pt-active-page-v1') || 'dashboard';
 let pendingSuggestions = [];
 
 const $ = (selector) => document.querySelector(selector);
@@ -73,9 +76,70 @@ const sampleImport = $('#sample-import');
 const photoImport = $('#photo-import');
 const exportPatientsCsv = $('#export-patients-csv');
 const exportPatientsExcel = $('#export-patients-excel');
+const pageSections = [...document.querySelectorAll('[data-page]')];
+const navLinks = [...document.querySelectorAll('[data-page-target]')];
+const appointmentForm = $('#appointment-form');
+const appointmentFormTitle = $('#appointment-form-title');
+const cancelAppointmentEdit = $('#cancel-appointment-edit');
+const therapistSubmit = $('#therapist-submit');
+const cancelTherapistEdit = $('#cancel-therapist-edit');
 let pendingPatientImport = [];
 
 const id = (prefix) => globalThis.crypto?.randomUUID?.() || `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+
+function setActivePage(page) {
+  activePage = pageSections.some((section) => section.dataset.page === page) ? page : 'dashboard';
+  localStorage.setItem('home-health-pt-active-page-v1', activePage);
+  pageSections.forEach((section) => { section.hidden = section.dataset.page !== activePage; });
+  navLinks.forEach((link) => {
+    const active = link.dataset.pageTarget === activePage;
+    link.classList.toggle('active', active);
+    link.setAttribute('aria-current', active ? 'page' : 'false');
+  });
+}
+
+function resetAppointmentForm() {
+  editingAppointment = null;
+  appointmentForm.reset();
+  appointmentFormTitle.textContent = '➕ Add appointment';
+  cancelAppointmentEdit.hidden = true;
+}
+
+function fillAppointmentForm(patientId, visitId) {
+  const patient = patients.find((item) => item.id === patientId);
+  const visit = patient?.schedule.find((item) => item.id === visitId);
+  if (!patient || !visit) return;
+  editingAppointment = { patientId, visitId };
+  appointmentForm.elements.patientId.value = patientId;
+  appointmentForm.elements.therapistId.value = visit.therapistId || patient.therapistId;
+  appointmentForm.elements.day.value = visit.day;
+  appointmentForm.elements.time.value = visit.time || '';
+  appointmentForm.elements.status.value = visit.status || 'scheduled';
+  appointmentFormTitle.textContent = `✏️ Edit ${patient.name} appointment`;
+  cancelAppointmentEdit.hidden = false;
+  setActivePage('schedule');
+  appointmentForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function resetTherapistForm() {
+  editingTherapistId = null;
+  therapistForm.reset();
+  therapistForm.elements.active.checked = true;
+  therapistSubmit.textContent = 'Add therapist';
+  cancelTherapistEdit.hidden = true;
+}
+
+function fillTherapistForm(therapistId) {
+  const therapist = therapists.find((item) => item.id === therapistId);
+  if (!therapist) return;
+  editingTherapistId = therapistId;
+  ['name', 'phone', 'email', 'role'].forEach((field) => { therapistForm.elements[field].value = therapist[field] || ''; });
+  therapistForm.elements.active.checked = therapist.active !== false;
+  therapistSubmit.textContent = 'Save therapist';
+  cancelTherapistEdit.hidden = false;
+  setActivePage('therapists');
+}
 
 function showFeedback(message, type = 'success') {
   let notice = $('#app-feedback');
@@ -285,18 +349,23 @@ function renderToday() {
 }
 
 function renderCalendar() {
-  const week = getWeeklySchedule(visiblePatients());
-  calendar.innerHTML = WEEK_DAYS.map((day) => `<section class="day"><h3>${day}</h3>${week[day].length ? week[day].map((visit) => `<div class="slot ${visit.status}"><strong>${escapeHtml(formatTime(visit.time))}</strong><span>${escapeHtml(visit.patient.name)}</span><small>${escapeHtml(visit.patient.area)} · ${escapeHtml(therapistName(visit.therapistId))} · ${escapeHtml(VISIT_STATUS_LABELS[visit.status] || visit.status)}</small></div>`).join('') : '<p>No visits</p>'}</section>`).join('');
+  const shown = visiblePatients();
+  appointmentForm.elements.patientId.innerHTML = shown.map((patient) => `<option value="${patient.id}">${escapeHtml(patient.name)}</option>`).join('');
+  appointmentForm.elements.therapistId.innerHTML = therapistOptions(appointmentForm.elements.therapistId.value);
+  appointmentForm.elements.day.innerHTML = WEEK_DAYS.map((day) => `<option value="${day}">${day}</option>`).join('');
+  appointmentForm.elements.status.innerHTML = statusOptions(appointmentForm.elements.status.value || 'scheduled');
+  const week = getWeeklySchedule(shown);
+  calendar.innerHTML = WEEK_DAYS.map((day) => `<section class="day"><h3>${day}</h3>${week[day].length ? week[day].map((visit) => `<div class="slot ${visit.status}"><strong>${escapeHtml(formatTime(visit.time))}</strong><span>${escapeHtml(visit.patient.name)}</span><small>${escapeHtml(visit.patient.area)} · ${escapeHtml(therapistName(visit.therapistId))} · ${escapeHtml(VISIT_STATUS_LABELS[visit.status] || visit.status)}</small><div class="visit-controls"><button type="button" data-edit-appointment="${visit.patient.id}|${visit.id}">Edit</button><button type="button" class="danger" data-delete-appointment="${visit.patient.id}|${visit.id}">Delete</button></div>${renderVisitControls(visit.patient, visit)}</div>`).join('') : '<p>No visits</p>'}</section>`).join('');
 }
 
 function renderTherapists() {
   userSelect.innerHTML = therapists.map((therapist) => `<option value="${therapist.id}" ${therapist.id === currentUserId ? 'selected' : ''}>${therapist.name} (${therapist.role})</option>`).join('');
   const user = currentUser();
   roleNote.textContent = user.role === 'admin' ? 'Admin view: all patients, schedules, and visit status.' : 'Therapist view: assigned patients only.';
-  therapistAdmin.hidden = user.role !== 'admin';
+  therapistAdmin.hidden = false;
   patientImportSection.hidden = user.role !== 'admin';
   backupSection.hidden = user.role !== 'admin';
-  therapistList.innerHTML = therapists.map((therapist) => `<article class="therapist-row"><strong>${escapeHtml(therapist.name)}</strong><span>${escapeHtml(therapist.phone || 'No phone')}</span><span>${escapeHtml(therapist.email || 'No email')}</span><button data-toggle-therapist="${therapist.id}" type="button">${therapist.active ? 'Active' : 'Inactive'}</button></article>`).join('');
+  therapistList.innerHTML = therapists.map((therapist) => { const assigned = patients.filter((patient) => patient.therapistId === therapist.id); const completed = visitLogs.filter((log) => log.therapistId === therapist.id && log.status === 'done').length; return `<article class="therapist-row"><strong>${escapeHtml(therapist.name)}</strong><span>${escapeHtml(therapist.phone || 'No phone')}</span><span>${assigned.length} patient${assigned.length === 1 ? '' : 's'} · ${completed} done</span><div class="actions-inline"><button data-edit-therapist="${therapist.id}" type="button">Edit</button><button data-toggle-therapist="${therapist.id}" type="button">${therapist.active ? 'Active' : 'Inactive'}</button><button class="danger" data-delete-therapist="${therapist.id}" type="button">Delete</button></div></article>`; }).join('');
   form.elements.therapistId.innerHTML = therapistOptions(user.role === 'therapist' ? user.id : '');
   form.elements.therapistId.disabled = user.role !== 'admin';
 }
@@ -340,7 +409,7 @@ function render() {
   scheduledCount.textContent = shown.reduce((sum, patient) => sum + patient.schedule.filter((visit) => visit.status === 'scheduled').length, 0);
   const groupedPatients = groupPatientsByArea(shown);
   areas.innerHTML = Object.entries(groupedPatients).map(([area, areaPatients]) => `<div class="area"><h2>${escapeHtml(area)}</h2>${areaPatients.map(renderPatient).join('')}</div>`).join('');
-  renderTherapists(); renderOptimize(); renderToday(); renderCalendar(); renderAdminDashboard(); renderNeedsSeen();
+  renderTherapists(); renderOptimize(); renderToday(); renderCalendar(); renderAdminDashboard(); renderNeedsSeen(); setActivePage(activePage);
 }
 
 function readPatientFromForm() {
@@ -369,9 +438,27 @@ function resetForm() {
   $('#preferred-days').innerHTML = preferredDayFields(); $('#schedule-fields').innerHTML = scheduleFields(); renderTherapists();
 }
 
-form.addEventListener('submit', (event) => { event.preventDefault(); runAction(editingId ? 'Patient updated.' : 'Patient saved.', () => { const patient = readPatientFromForm(); patients = editingId ? patients.map((item) => (item.id === editingId ? patient : item)) : [...patients, patient]; savePatients(patients); resetForm(); renderPatientImportPreview(); render(); }); });
+form.addEventListener('submit', (event) => { event.preventDefault(); runAction(editingId ? 'Patient updated.' : 'Patient saved.', () => { const patient = readPatientFromForm(); patients = editingId ? patients.map((item) => (item.id === editingId ? patient : item)) : [...patients, patient]; savePatients(patients); resetForm(); resetTherapistForm(); resetAppointmentForm(); renderPatientImportPreview(); render(); }); });
 
-therapistForm.addEventListener('submit', (event) => { event.preventDefault(); runAction('Therapist saved.', () => { const data = new FormData(therapistForm); therapists = [...therapists, { id: id('t'), name: data.get('name'), phone: data.get('phone'), email: data.get('email'), role: data.get('role'), active: data.get('active') === 'on' }]; saveTherapists(therapists); therapistForm.reset(); therapistForm.elements.active.checked = true; render(); }); });
+therapistForm.addEventListener('submit', (event) => { event.preventDefault(); runAction('Therapist saved.', () => { const data = new FormData(therapistForm); const therapist = { id: editingTherapistId || id('t'), name: data.get('name'), phone: data.get('phone'), email: data.get('email'), role: data.get('role'), active: data.get('active') === 'on' }; therapists = editingTherapistId ? therapists.map((item) => (item.id === editingTherapistId ? therapist : item)) : [...therapists, therapist]; saveTherapists(therapists); resetTherapistForm(); render(); }); });
+
+
+appointmentForm.addEventListener('submit', (event) => { event.preventDefault(); runAction(editingAppointment ? 'Appointment updated.' : 'Appointment added.', () => {
+  const data = new FormData(appointmentForm);
+  const patientId = data.get('patientId');
+  const visit = { id: editingAppointment?.visitId || id('v'), day: data.get('day'), time: data.get('time'), status: data.get('status') || 'scheduled', therapistId: data.get('therapistId'), completedBy: '', completedAt: '', note: '' };
+  patients = patients.map((patient) => {
+    if (patient.id !== patientId && patient.id !== editingAppointment?.patientId) return patient;
+    if (editingAppointment && patient.id === editingAppointment.patientId && patient.id !== patientId) return { ...patient, schedule: patient.schedule.filter((item) => item.id !== editingAppointment.visitId) };
+    const withoutOld = editingAppointment ? patient.schedule.filter((item) => item.id !== editingAppointment.visitId) : patient.schedule;
+    return { ...patient, therapistId: patient.therapistId || visit.therapistId, schedule: [...withoutOld, visit] };
+  });
+  savePatients(patients); resetAppointmentForm(); render();
+}); });
+
+navLinks.forEach((link) => link.addEventListener('click', () => setActivePage(link.dataset.pageTarget)));
+cancelAppointmentEdit.addEventListener('click', () => runAction('Appointment edit cancelled.', resetAppointmentForm));
+cancelTherapistEdit.addEventListener('click', () => runAction('Therapist edit cancelled.', resetTherapistForm));
 
 userSelect.addEventListener('change', () => runAction('User view changed.', () => { currentUserId = userSelect.value; saveSession(currentUserId); resetForm(); renderPatientImportPreview(); render(); }));
 visitFilters.addEventListener('change', () => renderAdminDashboard());
@@ -396,9 +483,9 @@ optimizeButton.addEventListener('click', () => runAction('', () => {
 }));
 
 document.addEventListener('click', (event) => {
-  const target = event.target.closest('button[data-edit], button[data-delete], button[data-toggle-therapist], button[data-apply-suggestion], button[data-edit-suggestion], button[data-visit-action], a.action');
+  const target = event.target.closest('button[data-edit], button[data-delete], button[data-toggle-therapist], button[data-delete-therapist], button[data-edit-therapist], button[data-edit-appointment], button[data-delete-appointment], button[data-apply-suggestion], button[data-edit-suggestion], button[data-visit-action], a.action');
   if (!target) return;
-  const { edit: editId, delete: deleteId, toggleTherapist, applySuggestion, editSuggestion, visitAction, patientId: actionPatientId, visitId: actionVisitId } = target.dataset;
+  const { edit: editId, delete: deleteId, toggleTherapist, deleteTherapist, editTherapist, editAppointment, deleteAppointment, applySuggestion, editSuggestion, visitAction, patientId: actionPatientId, visitId: actionVisitId } = target.dataset;
   if (target.matches('a.action')) showFeedback(`${target.textContent.trim()} opened.`);
   if (visitAction) runAction(`Visit marked ${VISIT_STATUS_LABELS[visitAction]}.`, () => {
     const note = visitAction === 'done' ? (prompt('Optional completion note') || '') : '';
@@ -426,7 +513,11 @@ document.addEventListener('click', (event) => {
   });
   if (editId) runAction('Patient loaded for editing.', () => fillForm(patients.find((patient) => patient.id === editId)));
   if (deleteId && confirm('Delete this patient?')) runAction('Patient deleted.', () => { patients = patients.filter((patient) => patient.id !== deleteId); savePatients(patients); render(); });
+  if (editTherapist) runAction('Therapist loaded for editing.', () => fillTherapistForm(editTherapist));
+  if (deleteTherapist && confirm('Delete this therapist? Patients will become unassigned.')) runAction('Therapist deleted.', () => { therapists = therapists.filter((therapist) => therapist.id !== deleteTherapist); patients = patients.map((patient) => patient.therapistId === deleteTherapist ? { ...patient, therapistId: '' } : patient); saveTherapists(therapists); savePatients(patients); render(); });
   if (toggleTherapist) runAction('Therapist status updated.', () => { therapists = therapists.map((therapist) => therapist.id === toggleTherapist ? { ...therapist, active: !therapist.active } : therapist); saveTherapists(therapists); render(); });
+  if (editAppointment) runAction('Appointment loaded for editing.', () => { const [patientId, visitId] = editAppointment.split('|'); fillAppointmentForm(patientId, visitId); });
+  if (deleteAppointment && confirm('Delete this appointment?')) runAction('Appointment deleted.', () => { const [patientId, visitId] = deleteAppointment.split('|'); patients = patients.map((patient) => patient.id === patientId ? { ...patient, schedule: patient.schedule.filter((visit) => visit.id !== visitId) } : patient); savePatients(patients); render(); });
   if (applySuggestion !== undefined || editSuggestion !== undefined) runAction('Schedule suggestion applied.', () => {
     const suggestionIndex = Number(applySuggestion ?? editSuggestion);
     const option = pendingSuggestions[suggestionIndex];
