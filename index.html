@@ -8,6 +8,14 @@
 </head>
 <body>
   <main>
+    <nav class="app-nav" aria-label="Main pages">
+      <button type="button" class="nav-link" data-page-target="dashboard">🏠<span>Dashboard</span></button>
+      <button type="button" class="nav-link" data-page-target="patients">👥<span>Patients</span></button>
+      <button type="button" class="nav-link" data-page-target="schedule">🗓️<span>Schedule</span></button>
+      <button type="button" class="nav-link" data-page-target="therapists">👩‍⚕️<span>Therapists</span></button>
+      <button type="button" class="nav-link" data-page-target="optimize">⚡<span>Optimize</span></button>
+      <button type="button" class="nav-link" data-page-target="import">☁️<span>Import</span></button>
+    </nav>
     <header class="hero">
       <div>
         <p class="eyebrow">Home Health PT</p>
@@ -28,6 +36,7 @@
       <div><span>🗓️</span><strong id="scheduled-count">0</strong><small>scheduled visits</small></div>
     </section>
 
+    <section class="page" data-page="dashboard">
     <section class="card dashboard" aria-labelledby="today-heading">
       <div class="section-title" id="today-heading">🏠 Today’s visits</div>
       <div id="today-list" class="today-list"></div>
@@ -50,11 +59,24 @@
       <div id="needs-seen-list" class="today-list"></div>
     </section>
 
+    </section>
+
+    <section class="page" data-page="schedule" hidden>
     <section class="card" aria-labelledby="calendar-heading">
       <div class="section-title" id="calendar-heading">🗓️ Weekly calendar</div>
+      <form id="appointment-form" class="form compact-form appointment-form">
+        <div class="section-title" id="appointment-form-title">➕ Add appointment</div>
+        <div class="grid-two"><label>Patient<select name="patientId" required></select></label><label>Therapist<select name="therapistId" required></select></label></div>
+        <div class="grid-two"><label>Day<select name="day" required></select></label><label>Time<input name="time" type="time" required /></label></div>
+        <label>Status<select name="status"></select></label>
+        <div class="button-row"><button class="primary" type="submit">Save appointment</button><button id="cancel-appointment-edit" type="button" hidden>Cancel edit</button></div>
+      </form>
       <div id="calendar" class="calendar"></div>
     </section>
 
+    </section>
+
+    <section class="page" data-page="optimize" hidden>
     <section class="card optimize" aria-labelledby="optimize-heading">
       <div class="section-title" id="optimize-heading">⚡ Optimize</div>
       <p>Suggest best day/time by city, nearby scheduled patients, assigned therapist, frequency, visits remaining, and preferred availability.</p>
@@ -62,6 +84,9 @@
       <div id="suggestions" class="suggestions"></div>
     </section>
 
+    </section>
+
+    <section class="page" data-page="therapists" hidden>
     <section class="card therapist-admin" id="therapist-admin" aria-labelledby="therapists-heading">
       <div class="section-title" id="therapists-heading">👩‍⚕️ Therapist list</div>
       <form id="therapist-form" class="form compact-form">
@@ -70,11 +95,14 @@
         <input name="email" placeholder="Email" inputmode="email" />
         <select name="role"><option value="therapist">Therapist</option><option value="admin">Admin</option></select>
         <label class="check-inline"><input name="active" type="checkbox" checked /> Active</label>
-        <button class="primary" type="submit">Add therapist</button>
+        <div class="button-row"><button class="primary" type="submit" id="therapist-submit">Add therapist</button><button id="cancel-therapist-edit" type="button" hidden>Cancel edit</button></div>
       </form>
       <div id="therapist-list" class="therapist-list"></div>
     </section>
 
+    </section>
+
+    <section class="page" data-page="patients" hidden>
     <form class="card form" id="patient-form">
       <div class="section-title" id="form-title">➕ Add patient</div>
       <input required name="name" placeholder="Patient name" autocomplete="name" />
@@ -101,6 +129,10 @@
       <div class="button-row"><button class="primary" type="submit">💾 Save patient</button><button id="cancel-edit" type="button" hidden>Cancel edit</button></div>
     </form>
 
+    <section class="areas" id="areas" aria-label="Patients grouped by city or area"></section>
+    </section>
+
+    <section class="page" data-page="import" hidden>
     <section class="card backup" id="backup-section" aria-labelledby="backup-heading" hidden>
       <div class="section-title" id="backup-heading">☁️ Backup export / import</div>
       <div class="button-row">
@@ -128,7 +160,7 @@
       </div>
     </section>
 
-    <section class="areas" id="areas" aria-label="Patients grouped by city or area"></section>
+    </section>
   </main>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script type="module" src="src/main.js"></script>

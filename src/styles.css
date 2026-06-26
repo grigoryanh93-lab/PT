@@ -93,3 +93,22 @@ a { color: #0f766e; font-weight: 800; }
   .file-button { width: 100%; text-align: center; }
   .preview-table { font-size: .84rem; min-width: 760px; }
 }
+.page[hidden] { display: none !important; }
+.app-nav { position: sticky; top: 0; z-index: 10; display: flex; gap: 8px; overflow-x: auto; padding: 10px 0; margin-bottom: 10px; background: #eef5f3dd; backdrop-filter: blur(12px); }
+.nav-link { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 10px 14px; border: 1px solid #dbe7e4; background: #ffffff; color: #475569; box-shadow: 0 8px 20px #0f172a0d; }
+.nav-link.active { background: #0f766e; color: #ffffff; border-color: #0f766e; box-shadow: 0 12px 26px #0f766e33; }
+.actions-inline { display: flex; flex-wrap: wrap; gap: 8px; justify-content: end; }
+button.danger { background: #fee2e2; color: #991b1b; }
+.appointment-form { border: 1px solid #dbe7e4; border-radius: 20px; padding: 12px; background: #f8fafc; }
+@media (min-width: 900px) {
+  main { width: min(100%, 1180px); display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; align-items: start; }
+  .app-nav { grid-row: 1 / span 20; position: sticky; top: 14px; flex-direction: column; overflow: visible; border-radius: 26px; padding: 12px; background: #ffffff; border: 1px solid #dbe7e4; box-shadow: 0 12px 28px #0f172a12; }
+  .nav-link { justify-content: flex-start; width: 100%; }
+}
+@media (max-width: 620px) {
+  main { padding-bottom: calc(92px + env(safe-area-inset-bottom)); }
+  .app-nav { position: fixed; left: 0; right: 0; top: auto; bottom: 0; margin: 0; padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); justify-content: space-between; background: #ffffffee; border-top: 1px solid #dbe7e4; box-shadow: 0 -12px 30px #0f172a1a; }
+  .nav-link { flex: 1 1 0; min-width: 0; min-height: 58px; flex-direction: column; gap: 2px; border-radius: 18px; padding: 6px 4px; font-size: 1.1rem; }
+  .nav-link span { font-size: .62rem; }
+  .app-feedback { bottom: calc(82px + env(safe-area-inset-bottom)); }
+}
