@@ -8,7 +8,7 @@ A mobile-friendly, browser-based scheduling app for home health physical therapy
 - Weekly schedule and visit status tracking.
 - Patients grouped by city or service area.
 - Therapist assignment, Supabase email/password authentication, admin reporting, import/export, and route/schedule optimization helpers.
-- Permanent shared storage in Supabase when configured, with local demo/cache storage only as a fallback.
+- Permanent shared storage in Supabase when configured, with local cache storage only as a fallback.
 - iPhone-friendly responsive layout with safe-area spacing and bottom navigation.
 
 ## Run locally
@@ -64,18 +64,18 @@ The workflow in `.github/workflows/deploy-pages.yml` runs on pushes to `main` an
 
 ## Shared Supabase mode
 
-The app runs in demo mode when Supabase is not configured. Demo mode keeps using `localStorage` so a therapist can try the app on one device. To make the app shared across phones, create a Supabase project and run `supabase-schema.sql` in the Supabase SQL editor.
+The app uses Supabase for shared authentication and permanent storage when the Vercel environment variables are present. If those variables are missing, it falls back to device-local cache storage only so the UI can still load for troubleshooting. Run `supabase-schema.sql` in the existing Supabase project before using shared patient data.
 
 ### Environment variables
 
 Set these variables in Vercel (**Project Settings → Environment Variables**) and redeploy:
 
 ```text
-SUPABASE_URL=https://ntwzgeanyyokfvvdnlcc.supabase.co
-SUPABASE_ANON_KEY=YOUR-PUBLISHABLE-KEY
+NEXT_PUBLIC_SUPABASE_URL=https://ntwzgeanyyokfvvdnlcc.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=YOUR-PUBLISHABLE-KEY
 ```
 
-For local static builds you can also export `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` before running `npm run build`. The committed development config already points to `https://ntwzgeanyyokfvvdnlcc.supabase.co`, but you still need to provide your publishable key through `SUPABASE_ANON_KEY`/`VITE_SUPABASE_ANON_KEY`. The build writes those values into `dist/src/config.js`. Do not use the Supabase service-role key in Vercel or in the browser.
+For local static builds, export `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` before running `npm run build`. The build also accepts the legacy `SUPABASE_URL`/`SUPABASE_ANON_KEY` and `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` names for backwards compatibility. The committed development config already points to `https://ntwzgeanyyokfvvdnlcc.supabase.co`, but you still need to provide your publishable key. The build writes those values into `dist/src/config.js`. Do not use the Supabase service-role key in Vercel or in the browser.
 
 ### First admin and therapist accounts
 
@@ -94,4 +94,4 @@ Successful Supabase loads are cached to `localStorage`. If Supabase is unavailab
 
 ### Manual deployment steps still required
 
-This repository cannot update your Vercel project or redeploy without your Vercel/GitHub credentials. After merging this change, add `SUPABASE_URL` and `SUPABASE_ANON_KEY` in Vercel, push to GitHub, and trigger a redeploy. You must also run `supabase-schema.sql` manually in the Supabase SQL editor before the app can store shared data.
+If a Vercel deployment does not pick up Supabase, confirm `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` are set for the Production environment, then trigger a redeploy. You must also run `supabase-schema.sql` manually in the Supabase SQL editor before the app can store shared data.

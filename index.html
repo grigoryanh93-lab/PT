@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Home Health PT Scheduler</title>
+  <title>HomePT Pro</title>
   <link rel="stylesheet" href="./src/styles.css" />
 </head>
 <body>
@@ -19,11 +19,11 @@
     </nav>
     <header class="hero">
       <div>
-        <p class="eyebrow">Home Health PT</p>
-        <h1>Today’s PT route</h1>
+        <p class="eyebrow">HomePT Pro</p>
+        <h1>HomePT Pro</h1>
         <p>Mobile scheduling, therapist assignment, visit status tracking, optimization, and backup tools for home health physical therapy.</p>
       </div>
-      <button id="reset-demo" type="button">Reset demo</button>
+      <button id="reset-demo" type="button">Reset local data</button>
     </header>
 
     <section class="card login" aria-labelledby="login-heading">
@@ -34,7 +34,7 @@
         <input name="password" type="password" placeholder="Password" autocomplete="current-password" />
         <div class="button-row"><button class="primary" type="submit">Log in</button><button id="signup-button" type="button">Create account</button><button id="logout-button" type="button" hidden>Logout</button></div>
       </form>
-      <select id="user-select" aria-label="Select demo user"></select>
+      <select id="user-select" aria-label="Select local fallback user"></select>
     </section>
 
     <section class="stats" aria-label="Patient statistics">
