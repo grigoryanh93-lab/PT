@@ -30,7 +30,7 @@ import {
   saveVisitLogs,
   upsertVisitLog,
 } from './storage.js';
-import { getSession, isSupabaseConfigured, loadSharedData, savePatientShared, saveTherapistShared, saveVisitLogShared, signIn, signOut, signUp, supabaseClient } from './supabaseClient.js';
+import { deletePatientShared, deleteTherapistShared, getSession, isSupabaseConfigured, loadSharedData, savePatientImportShared, savePatientShared, saveTherapistShared, saveVisitLogShared, signIn, signOut, signUp, supabaseClient } from './supabaseClient.js';
 
 let patients = loadPatients();
 let therapists = loadTherapists();
@@ -100,7 +100,7 @@ const therapistSubmit = $('#therapist-submit');
 const cancelTherapistEdit = $('#cancel-therapist-edit');
 let pendingPatientImport = [];
 
-const id = (prefix) => globalThis.crypto?.randomUUID?.() || `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const id = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 
 function setActivePage(page) {
@@ -175,6 +175,13 @@ function showFeedback(message, type = 'success') {
 function runAction(label, action) {
   try {
     const result = action();
+    if (result && typeof result.then === 'function') {
+      return result.then((value) => { if (label) showFeedback(label); return value; }).catch((error) => {
+        console.error(`Action failed: ${label || 'unlabeled action'}`, error);
+        showFeedback(error.message || 'Something went wrong. Please try again.', 'error');
+        return undefined;
+      });
+    }
     if (label) showFeedback(label);
     return result;
   } catch (error) {
@@ -586,9 +593,9 @@ document.addEventListener('click', (event) => {
     syncPatients(); render();
   });
   if (editId) runAction('Patient loaded for editing.', () => fillForm(patients.find((patient) => patient.id === editId)));
-  if (deleteId && confirm('Delete this patient?')) runAction('Patient deleted.', () => { patients = patients.filter((patient) => patient.id !== deleteId); syncPatients(); render(); });
+  if (deleteId && confirm('Delete this patient?')) runAction('Patient deleted.', async () => { patients = patients.filter((patient) => patient.id !== deleteId); savePatients(patients); if (sharedMode) await deletePatientShared(deleteId); render(); });
   if (editTherapist) runAction('Therapist loaded for editing.', () => fillTherapistForm(editTherapist));
-  if (deleteTherapist && confirm('Delete this therapist? Patients will become unassigned.')) runAction('Therapist deleted.', () => { therapists = therapists.filter((therapist) => therapist.id !== deleteTherapist); patients = patients.map((patient) => patient.therapistId === deleteTherapist ? { ...patient, therapistId: '' } : patient); saveTherapists(therapists); syncPatients(); render(); });
+  if (deleteTherapist && confirm('Delete this therapist? Patients will become unassigned.')) runAction('Therapist deleted.', async () => { therapists = therapists.filter((therapist) => therapist.id !== deleteTherapist); patients = patients.map((patient) => patient.therapistId === deleteTherapist ? { ...patient, therapistId: '' } : patient); saveTherapists(therapists); syncPatients(); if (sharedMode) await deleteTherapistShared(deleteTherapist); render(); });
   if (toggleTherapist) runAction('Therapist status updated.', () => { therapists = therapists.map((therapist) => therapist.id === toggleTherapist ? { ...therapist, active: !therapist.active } : therapist); syncTherapists(); render(); });
   if (editAppointment) runAction('Appointment loaded for editing.', () => { const [patientId, visitId] = editAppointment.split('|'); fillAppointmentForm(patientId, visitId); });
   if (deleteAppointment && confirm('Delete this appointment?')) runAction('Appointment deleted.', () => { const [patientId, visitId] = deleteAppointment.split('|'); patients = patients.map((patient) => patient.id === patientId ? { ...patient, schedule: patient.schedule.filter((visit) => visit.id !== visitId) } : patient); syncPatients(); render(); });
@@ -620,7 +627,7 @@ photoImport.addEventListener('click', () => showFeedback('Photo import will requ
 clearPatientImport.addEventListener('click', () => runAction('Import preview cleared.', () => { pendingPatientImport = []; patientImportFile.value = ''; renderPatientImportPreview(); }));
 sampleImport.addEventListener('click', () => runAction('Sample CSV parsed.', () => { pendingPatientImport = rowsToPatients(parseCsv(SAMPLE_CSV)); renderPatientImportPreview(); }));
 patientImportFile.addEventListener('change', async () => { try { const file = patientImportFile.files?.[0]; if (!file) return; pendingPatientImport = rowsToPatients(await parsePatientImportFile(file)); renderPatientImportPreview(); showFeedback('Patient import preview ready.'); } catch (error) { console.error('Patient import failed', error); showFeedback(error.message || 'Patient import failed.', 'error'); } });
-confirmPatientImport.addEventListener('click', () => runAction('Patients imported.', () => { if (currentUser().role !== 'admin') throw new Error('Only admins can import patients.'); const incoming = pendingPatientImport.filter((item) => !item.duplicate && !item.errors.length).map((item) => item.patient); patients = [...patients, ...incoming]; syncPatients(); pendingPatientImport = []; patientImportFile.value = ''; renderPatientImportPreview(); render(); }));
+confirmPatientImport.addEventListener('click', () => runAction('Patients imported.', async () => { if (currentUser().role !== 'admin') throw new Error('Only admins can import patients.'); const incoming = pendingPatientImport.filter((item) => !item.duplicate && !item.errors.length).map((item) => item.patient); patients = [...patients, ...incoming]; syncPatients(); if (sharedMode && incoming.length) await savePatientImportShared({ fileName: patientImportFile.files?.[0]?.name || 'manual/sample import', importedBy: currentUserId, rowCount: pendingPatientImport.length, importedCount: incoming.length, errorCount: pendingPatientImport.filter((item) => item.errors.length).length, rows: pendingPatientImport }); pendingPatientImport = []; patientImportFile.value = ''; renderPatientImportPreview(); render(); }));
 
 exportButton.addEventListener('click', () => runAction('Backup exported.', () => { const blob = new Blob([JSON.stringify({ patients, therapists, visitLogs }, null, 2)], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `pt-scheduler-backup-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(link.href); }));
 

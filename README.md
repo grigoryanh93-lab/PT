@@ -7,8 +7,8 @@ A mobile-friendly, browser-based scheduling app for home health physical therapy
 - Patient list with address, phone number, visits remaining, frequency, authorization expiration date, and notes.
 - Weekly schedule and visit status tracking.
 - Patients grouped by city or service area.
-- Therapist assignment, mock role switching, admin reporting, import/export, and route/schedule optimization helpers.
-- Permanent browser storage using `localStorage` so data remains saved on the device between sessions.
+- Therapist assignment, Supabase email/password authentication, admin reporting, import/export, and route/schedule optimization helpers.
+- Permanent shared storage in Supabase when configured, with local demo/cache storage only as a fallback.
 - iPhone-friendly responsive layout with safe-area spacing and bottom navigation.
 
 ## Run locally
@@ -71,22 +71,27 @@ The app runs in demo mode when Supabase is not configured. Demo mode keeps using
 Set these variables in Vercel (**Project Settings → Environment Variables**) and redeploy:
 
 ```text
-SUPABASE_URL=https://YOUR-PROJECT.supabase.co
-SUPABASE_ANON_KEY=YOUR-PUBLIC-ANON-KEY
+SUPABASE_URL=https://ntwzgeanyyokfvvdnlcc.supabase.co
+SUPABASE_ANON_KEY=YOUR-PUBLISHABLE-KEY
 ```
 
-For local static builds you can also export `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` before running `npm run build`. The build writes those values into `dist/src/config.js`. Do not use the Supabase service-role key in Vercel or in the browser.
+For local static builds you can also export `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` before running `npm run build`. The committed development config already points to `https://ntwzgeanyyokfvvdnlcc.supabase.co`, but you still need to provide your publishable key through `SUPABASE_ANON_KEY`/`VITE_SUPABASE_ANON_KEY`. The build writes those values into `dist/src/config.js`. Do not use the Supabase service-role key in Vercel or in the browser.
 
 ### First admin and therapist accounts
 
-1. In Supabase Auth, create the first admin user.
-2. Copy that user's Auth UID.
-3. Insert matching rows in `profiles` and `therapists` with role `admin`.
+1. Run `supabase-schema.sql` in the Supabase SQL editor. This creates tables, RLS policies, and a signup trigger that automatically creates `profiles`, `users`, and `therapists` rows for each email/password account.
+2. Sign up the first account in the app or create it in Supabase Auth.
+3. In Supabase SQL editor, promote that first user to admin by running `update public.profiles set role = 'admin' where email = 'YOUR_EMAIL@example.com'; update public.users set role = 'admin' where email = 'YOUR_EMAIL@example.com';`.
 4. Log in to the app with the admin account.
-5. Use **Therapists → Add therapist** to create therapist profiles in the app, then create or invite matching Supabase Auth users from the Supabase dashboard using the same UID/profile details.
+5. Use **Therapists → Add therapist** for therapist profile details, and have each therapist create an email/password account or invite them from Supabase Auth.
 
 Admins can see all patients, appointments, visit logs, reports, imports, and exports. Therapists can only read assigned patients and appointments because the Supabase row-level security policies filter rows by `auth.uid()`.
 
 ### Offline/cache behavior
 
 Successful Supabase loads are cached to `localStorage`. If Supabase is unavailable, the app displays a warning and continues with the local cache so phone use is not blocked, but the source of truth for configured deployments is Supabase.
+
+
+### Manual deployment steps still required
+
+This repository cannot update your Vercel project or redeploy without your Vercel/GitHub credentials. After merging this change, add `SUPABASE_URL` and `SUPABASE_ANON_KEY` in Vercel, push to GitHub, and trigger a redeploy. You must also run `supabase-schema.sql` manually in the Supabase SQL editor before the app can store shared data.

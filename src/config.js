@@ -1,4 +1,4 @@
 window.PT_APP_CONFIG = window.PT_APP_CONFIG || {
-  supabaseUrl: '',
+  supabaseUrl: 'https://ntwzgeanyyokfvvdnlcc.supabase.co',
   supabaseAnonKey: '',
 };
