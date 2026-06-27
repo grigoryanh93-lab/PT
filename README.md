@@ -27,7 +27,17 @@ npm test
 npm run build
 ```
 
-The build command creates a static GitHub Pages artifact in `dist/`.
+The build command creates a static deployment artifact in `dist/`. Vercel installs with `npm install`, builds with `npm run build`, and serves `dist/` as the output directory.
+
+## Vercel deployment
+
+This app is a static site. `vercel.json` tells Vercel to:
+
+- install dependencies with `npm install`;
+- build with `npm run build`;
+- serve the generated `dist/` directory.
+
+Deploy from the `main` branch in Vercel and keep the output directory set to `dist` if overriding project settings manually.
 
 ## Free GitHub Pages deployment
 
