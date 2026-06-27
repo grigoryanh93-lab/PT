@@ -30,6 +30,7 @@ import {
   saveVisitLogs,
   upsertVisitLog,
 } from './storage.js';
+import { getSession, isSupabaseConfigured, loadSharedData, savePatientShared, saveTherapistShared, saveVisitLogShared, signIn, signOut, signUp, supabaseClient } from './supabaseClient.js';
 
 let patients = loadPatients();
 let therapists = loadTherapists();
@@ -40,6 +41,8 @@ let editingTherapistId = null;
 let editingAppointment = null;
 let activePage = localStorage.getItem('home-health-pt-active-page-v1') || 'dashboard';
 let pendingSuggestions = [];
+let sharedMode = isSupabaseConfigured;
+let authSession = null;
 
 const $ = (selector) => document.querySelector(selector);
 const form = $('#patient-form');
@@ -57,6 +60,9 @@ const resetButton = $('#reset-demo');
 const formTitle = $('#form-title');
 const cancelEdit = $('#cancel-edit');
 const userSelect = $('#user-select');
+const authForm = $('#auth-form');
+const signupButton = $('#signup-button');
+const logoutButton = $('#logout-button');
 const roleNote = $('#role-note');
 const therapistAdmin = $('#therapist-admin');
 const therapistList = $('#therapist-list');
@@ -177,7 +183,13 @@ function runAction(label, action) {
     return undefined;
   }
 }
-const currentUser = () => therapists.find((therapist) => therapist.id === currentUserId) || therapists[0];
+const currentUser = () => therapists.find((therapist) => therapist.id === currentUserId) || therapists[0] || { id: '', role: 'therapist', name: 'Signed out' };
+const persistPatient = async (patient) => { savePatients(patients); if (sharedMode) await savePatientShared(patient); };
+const persistTherapist = async (therapist) => { saveTherapists(therapists); if (sharedMode) await saveTherapistShared(therapist); };
+const persistVisitLog = async (log) => { saveVisitLogs(visitLogs); if (sharedMode && log) await saveVisitLogShared(log); };
+const syncPatients = () => { savePatients(patients); if (sharedMode) Promise.allSettled(patients.map(savePatientShared)).then((results) => { if (results.some((result) => result.status === 'rejected')) showFeedback('Saved locally; Supabase sync needs attention.', 'error'); }); };
+const syncTherapists = () => { saveTherapists(therapists); if (sharedMode) Promise.allSettled(therapists.map(saveTherapistShared)); };
+async function refreshSharedData() { if (!sharedMode) return; const shared = await loadSharedData(); patients = shared.patients; therapists = shared.therapists; visitLogs = shared.visitLogs; savePatients(patients); saveTherapists(therapists); saveVisitLogs(visitLogs); }
 const visiblePatients = () => getVisiblePatients(patients, currentUser());
 const therapistName = (therapistId) => therapists.find((therapist) => therapist.id === therapistId)?.name || 'Unassigned';
 
@@ -375,9 +387,10 @@ function renderCalendar() {
 
 function renderTherapists() {
   userSelect.innerHTML = therapists.map((therapist) => `<option value="${therapist.id}" ${therapist.id === currentUserId ? 'selected' : ''}>${therapist.name} (${therapist.role})</option>`).join('');
+  userSelect.hidden = sharedMode;
   const user = currentUser();
-  roleNote.textContent = user.role === 'admin' ? 'Admin view: all patients, schedules, and visit status.' : 'Therapist view: assigned patients only.';
-  therapistAdmin.hidden = false;
+  roleNote.textContent = sharedMode ? (authSession ? `${user.role === 'admin' ? 'Admin' : 'Therapist'} shared Supabase account: ${user.name || authSession.user.email}` : 'Supabase is configured. Log in to sync shared team data.') : 'Demo mode: Supabase is not configured, so data is stored locally on this device.';
+  therapistAdmin.hidden = user.role !== 'admin';
   patientImportSection.hidden = user.role !== 'admin';
   backupSection.hidden = user.role !== 'admin';
   therapistList.innerHTML = therapists.map((therapist) => { const assigned = patients.filter((patient) => patient.therapistId === therapist.id); const productivity = getTherapistProductivity(patients, [therapist], visitLogs)[0]; return `<article class="therapist-row"><strong>${escapeHtml(therapist.name)}</strong><span>${escapeHtml(therapist.phone || 'No phone')}</span><span>${assigned.length} patient${assigned.length === 1 ? '' : 's'} · ${productivity.completedToday} done today · ${productivity.pending} pending · ${escapeHtml((therapist.serviceAreas || []).join(', ') || 'No areas')}</span><div class="actions-inline"><button data-edit-therapist="${therapist.id}" type="button">Edit</button><button data-toggle-therapist="${therapist.id}" type="button">${therapist.active ? 'Active' : 'Inactive'}</button><button class="danger" data-delete-therapist="${therapist.id}" type="button">Delete</button></div></article>`; }).join('');
@@ -479,9 +492,9 @@ function resetForm() {
   $('#preferred-days').innerHTML = preferredDayFields(); $('#schedule-fields').innerHTML = scheduleFields(); renderTherapists();
 }
 
-form.addEventListener('submit', (event) => { event.preventDefault(); runAction(editingId ? 'Patient updated.' : 'Patient saved.', () => { const patient = readPatientFromForm(); patients = editingId ? patients.map((item) => (item.id === editingId ? patient : item)) : [...patients, patient]; savePatients(patients); resetForm(); resetTherapistForm(); resetAppointmentForm(); renderPatientImportPreview(); render(); }); });
+form.addEventListener('submit', async (event) => { event.preventDefault(); try { const patient = readPatientFromForm(); patients = editingId ? patients.map((item) => (item.id === editingId ? patient : item)) : [...patients, patient]; await persistPatient(patient); resetForm(); resetTherapistForm(); resetAppointmentForm(); renderPatientImportPreview(); render(); showFeedback(editingId ? 'Patient updated.' : 'Patient saved.'); } catch (error) { console.error(error); showFeedback(error.message || 'Patient save failed.', 'error'); } });
 
-therapistForm.addEventListener('submit', (event) => { event.preventDefault(); runAction('Therapist saved.', () => { const data = new FormData(therapistForm); const therapist = { id: editingTherapistId || id('t'), name: data.get('name'), phone: data.get('phone'), email: data.get('email'), role: data.get('role'), serviceAreas: String(data.get('serviceAreas') || '').split(',').map((area) => area.trim()).filter(Boolean), availability: data.get('availability'), active: data.get('active') === 'on' }; therapists = editingTherapistId ? therapists.map((item) => (item.id === editingTherapistId ? therapist : item)) : [...therapists, therapist]; saveTherapists(therapists); resetTherapistForm(); render(); }); });
+therapistForm.addEventListener('submit', async (event) => { event.preventDefault(); try { const data = new FormData(therapistForm); const therapist = { id: editingTherapistId || id('t'), name: data.get('name'), phone: data.get('phone'), email: data.get('email'), role: data.get('role') === 'admin' ? 'admin' : 'therapist', serviceAreas: String(data.get('serviceAreas') || '').split(',').map((area) => area.trim()).filter(Boolean), availability: data.get('availability'), active: data.get('active') === 'on' }; therapists = editingTherapistId ? therapists.map((item) => (item.id === editingTherapistId ? therapist : item)) : [...therapists, therapist]; await persistTherapist(therapist); resetTherapistForm(); render(); showFeedback('Therapist saved. Create or invite the matching Supabase Auth user from your Supabase dashboard.'); } catch (error) { console.error(error); showFeedback(error.message || 'Therapist save failed.', 'error'); } });
 
 
 appointmentForm.addEventListener('submit', (event) => { event.preventDefault(); runAction(editingAppointment ? 'Appointment updated.' : 'Appointment added.', () => {
@@ -494,7 +507,7 @@ appointmentForm.addEventListener('submit', (event) => { event.preventDefault(); 
     const withoutOld = editingAppointment ? patient.schedule.filter((item) => item.id !== editingAppointment.visitId) : patient.schedule;
     return { ...patient, therapistId: patient.therapistId || visit.therapistId, schedule: [...withoutOld, visit] };
   });
-  savePatients(patients); resetAppointmentForm(); render();
+  syncPatients(); resetAppointmentForm(); render();
 }); });
 
 navLinks.forEach((link) => link.addEventListener('click', () => setActivePage(link.dataset.pageTarget)));
@@ -534,7 +547,7 @@ generateNextWeek.addEventListener('click', () => runAction('Next week suggestion
 }));
 applyAllSuggestions.addEventListener('click', () => runAction('All suggestions applied.', () => {
   patients = patients.map((patient) => ({ ...patient, schedule: [...patient.schedule, ...pendingSuggestions.filter((option) => (option.patientId || optimizePatient.value) === patient.id).map((option) => ({ id: id('v'), day: option.day, time: option.time, status: 'scheduled', therapistId: option.therapistId, completedBy: '', completedAt: '', note: '' }))] }));
-  savePatients(patients); pendingSuggestions = []; applyAllSuggestions.disabled = true; suggestions.innerHTML = '<p class="empty">All suggestions applied.</p>'; render();
+  syncPatients(); pendingSuggestions = []; applyAllSuggestions.disabled = true; suggestions.innerHTML = '<p class="empty">All suggestions applied.</p>'; render();
 }));
 exportReportCsv.addEventListener('click', () => runAction('Report CSV exported.', () => {
   const reports = buildReports(patients, therapists, visitLogs);
@@ -569,16 +582,16 @@ document.addEventListener('click', (event) => {
         schedule,
       };
     });
-    if (nextLog) { visitLogs = upsertVisitLog(visitLogs, nextLog); saveVisitLogs(visitLogs); }
-    savePatients(patients); render();
+    if (nextLog) { visitLogs = upsertVisitLog(visitLogs, nextLog); persistVisitLog(nextLog); }
+    syncPatients(); render();
   });
   if (editId) runAction('Patient loaded for editing.', () => fillForm(patients.find((patient) => patient.id === editId)));
-  if (deleteId && confirm('Delete this patient?')) runAction('Patient deleted.', () => { patients = patients.filter((patient) => patient.id !== deleteId); savePatients(patients); render(); });
+  if (deleteId && confirm('Delete this patient?')) runAction('Patient deleted.', () => { patients = patients.filter((patient) => patient.id !== deleteId); syncPatients(); render(); });
   if (editTherapist) runAction('Therapist loaded for editing.', () => fillTherapistForm(editTherapist));
-  if (deleteTherapist && confirm('Delete this therapist? Patients will become unassigned.')) runAction('Therapist deleted.', () => { therapists = therapists.filter((therapist) => therapist.id !== deleteTherapist); patients = patients.map((patient) => patient.therapistId === deleteTherapist ? { ...patient, therapistId: '' } : patient); saveTherapists(therapists); savePatients(patients); render(); });
-  if (toggleTherapist) runAction('Therapist status updated.', () => { therapists = therapists.map((therapist) => therapist.id === toggleTherapist ? { ...therapist, active: !therapist.active } : therapist); saveTherapists(therapists); render(); });
+  if (deleteTherapist && confirm('Delete this therapist? Patients will become unassigned.')) runAction('Therapist deleted.', () => { therapists = therapists.filter((therapist) => therapist.id !== deleteTherapist); patients = patients.map((patient) => patient.therapistId === deleteTherapist ? { ...patient, therapistId: '' } : patient); saveTherapists(therapists); syncPatients(); render(); });
+  if (toggleTherapist) runAction('Therapist status updated.', () => { therapists = therapists.map((therapist) => therapist.id === toggleTherapist ? { ...therapist, active: !therapist.active } : therapist); syncTherapists(); render(); });
   if (editAppointment) runAction('Appointment loaded for editing.', () => { const [patientId, visitId] = editAppointment.split('|'); fillAppointmentForm(patientId, visitId); });
-  if (deleteAppointment && confirm('Delete this appointment?')) runAction('Appointment deleted.', () => { const [patientId, visitId] = deleteAppointment.split('|'); patients = patients.map((patient) => patient.id === patientId ? { ...patient, schedule: patient.schedule.filter((visit) => visit.id !== visitId) } : patient); savePatients(patients); render(); });
+  if (deleteAppointment && confirm('Delete this appointment?')) runAction('Appointment deleted.', () => { const [patientId, visitId] = deleteAppointment.split('|'); patients = patients.map((patient) => patient.id === patientId ? { ...patient, schedule: patient.schedule.filter((visit) => visit.id !== visitId) } : patient); syncPatients(); render(); });
   if (applySuggestion !== undefined || editSuggestion !== undefined) runAction('Schedule suggestion applied.', () => {
     const suggestionIndex = Number(applySuggestion ?? editSuggestion);
     const option = pendingSuggestions[suggestionIndex];
@@ -587,7 +600,7 @@ document.addEventListener('click', (event) => {
     if (!option) throw new Error('That schedule suggestion is no longer available. Run Optimize Schedule again.');
     const time = editSuggestion !== undefined ? prompt('Edit suggested time (HH:MM)', option.time) || option.time : option.time;
     patients = patients.map((patient) => patient.id === patientId ? { ...patient, schedule: [...patient.schedule, { id: id('v'), day: option.day, time, status: 'scheduled', therapistId: option.therapistId, completedBy: '', completedAt: '', note: '' }] } : patient);
-    savePatients(patients); suggestions.innerHTML = '<p class="empty">Suggestion applied. Review the calendar and edit the patient if needed.</p>'; render();
+    syncPatients(); suggestions.innerHTML = '<p class="empty">Suggestion applied. Review the calendar and edit the patient if needed.</p>'; render();
   });
 });
 
@@ -597,7 +610,7 @@ document.addEventListener('change', (event) => {
   runAction('Visit status updated.', () => {
     const [patientId, visitId] = visitStatus.split('|');
     patients = patients.map((patient) => patient.id === patientId ? { ...patient, schedule: patient.schedule.map((visit) => visit.id === visitId ? { ...visit, status: event.target.value, completedBy: event.target.value === 'done' ? currentUser().id : visit.completedBy } : visit) } : patient);
-    savePatients(patients); render();
+    syncPatients(); render();
   });
 });
 
@@ -607,13 +620,19 @@ photoImport.addEventListener('click', () => showFeedback('Photo import will requ
 clearPatientImport.addEventListener('click', () => runAction('Import preview cleared.', () => { pendingPatientImport = []; patientImportFile.value = ''; renderPatientImportPreview(); }));
 sampleImport.addEventListener('click', () => runAction('Sample CSV parsed.', () => { pendingPatientImport = rowsToPatients(parseCsv(SAMPLE_CSV)); renderPatientImportPreview(); }));
 patientImportFile.addEventListener('change', async () => { try { const file = patientImportFile.files?.[0]; if (!file) return; pendingPatientImport = rowsToPatients(await parsePatientImportFile(file)); renderPatientImportPreview(); showFeedback('Patient import preview ready.'); } catch (error) { console.error('Patient import failed', error); showFeedback(error.message || 'Patient import failed.', 'error'); } });
-confirmPatientImport.addEventListener('click', () => runAction('Patients imported.', () => { if (currentUser().role !== 'admin') throw new Error('Only admins can import patients.'); const incoming = pendingPatientImport.filter((item) => !item.duplicate && !item.errors.length).map((item) => item.patient); patients = [...patients, ...incoming]; savePatients(patients); pendingPatientImport = []; patientImportFile.value = ''; renderPatientImportPreview(); render(); }));
+confirmPatientImport.addEventListener('click', () => runAction('Patients imported.', () => { if (currentUser().role !== 'admin') throw new Error('Only admins can import patients.'); const incoming = pendingPatientImport.filter((item) => !item.duplicate && !item.errors.length).map((item) => item.patient); patients = [...patients, ...incoming]; syncPatients(); pendingPatientImport = []; patientImportFile.value = ''; renderPatientImportPreview(); render(); }));
 
 exportButton.addEventListener('click', () => runAction('Backup exported.', () => { const blob = new Blob([JSON.stringify({ patients, therapists, visitLogs }, null, 2)], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `pt-scheduler-backup-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(link.href); }));
 
-importInput.addEventListener('change', async () => { try { const file = importInput.files?.[0]; if (!file) return; const backup = JSON.parse(await file.text()); patients = Array.isArray(backup.patients) ? backup.patients : patients; therapists = Array.isArray(backup.therapists) ? backup.therapists : therapists; visitLogs = Array.isArray(backup.visitLogs) ? backup.visitLogs : visitLogs; saveVisitLogs(visitLogs); savePatients(patients); saveTherapists(therapists); importInput.value = ''; render(); showFeedback('Backup imported.'); } catch (error) { console.error('Import failed', error); showFeedback('Import failed. Choose a valid backup JSON file.', 'error'); } });
+importInput.addEventListener('change', async () => { try { const file = importInput.files?.[0]; if (!file) return; const backup = JSON.parse(await file.text()); patients = Array.isArray(backup.patients) ? backup.patients : patients; therapists = Array.isArray(backup.therapists) ? backup.therapists : therapists; visitLogs = Array.isArray(backup.visitLogs) ? backup.visitLogs : visitLogs; saveVisitLogs(visitLogs); syncPatients(); syncTherapists(); importInput.value = ''; render(); showFeedback('Backup imported.'); } catch (error) { console.error('Import failed', error); showFeedback('Import failed. Choose a valid backup JSON file.', 'error'); } });
 
 cancelEdit.addEventListener('click', () => runAction('Edit cancelled.', resetForm));
+authForm.addEventListener('submit', async (event) => { event.preventDefault(); if (!sharedMode) return showFeedback('Demo mode is active. Add Supabase keys to enable login.', 'error'); try { const data = new FormData(authForm); await signIn(data.get('email'), data.get('password')); await initApp(); showFeedback('Logged in.'); } catch (error) { console.error(error); showFeedback(error.message || 'Login failed.', 'error'); } });
+signupButton.addEventListener('click', async () => { if (!sharedMode) return showFeedback('Demo mode is active. Add Supabase keys to enable accounts.', 'error'); try { const data = new FormData(authForm); await signUp(data.get('email'), data.get('password'), data.get('name')); showFeedback('Account created. Check email if confirmation is enabled, then log in.'); } catch (error) { console.error(error); showFeedback(error.message || 'Signup failed.', 'error'); } });
+logoutButton.addEventListener('click', async () => { if (sharedMode) await signOut(); authSession = null; render(); showFeedback('Logged out.'); });
+
 resetButton.addEventListener('click', () => runAction('Demo data reset.', () => { patients = initialPatients; therapists = initialTherapists; visitLogs = []; currentUserId = 't-admin'; savePatients(patients); saveTherapists(therapists); saveVisitLogs(visitLogs); saveSession(currentUserId); pendingSuggestions = []; suggestions.innerHTML = ''; resetForm(); renderPatientImportPreview(); render(); }));
 
-resetForm(); renderPatientImportPreview(); render();
+async function initApp() { try { authSession = sharedMode ? await getSession() : null; logoutButton.hidden = !authSession; authForm.hidden = Boolean(authSession); if (sharedMode && authSession) { currentUserId = authSession.user.id; await refreshSharedData(); } } catch (error) { console.error('Supabase unavailable, using cache', error); sharedMode = false; showFeedback('Supabase unavailable. Using local cache fallback.', 'error'); } resetForm(); renderPatientImportPreview(); render(); }
+if (supabaseClient) supabaseClient.auth.onAuthStateChange(() => initApp());
+initApp();

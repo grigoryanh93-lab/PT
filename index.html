@@ -27,8 +27,14 @@
     </header>
 
     <section class="card login" aria-labelledby="login-heading">
-      <div><div class="section-title" id="login-heading">🔐 Mock login</div><p id="role-note"></p></div>
-      <select id="user-select" aria-label="Select mock user"></select>
+      <div><div class="section-title" id="login-heading">🔐 Login</div><p id="role-note"></p></div>
+      <form id="auth-form" class="auth-form">
+        <input name="name" placeholder="Full name (for new accounts)" autocomplete="name" />
+        <input name="email" type="email" placeholder="Email" autocomplete="email" />
+        <input name="password" type="password" placeholder="Password" autocomplete="current-password" />
+        <div class="button-row"><button class="primary" type="submit">Log in</button><button id="signup-button" type="button">Create account</button><button id="logout-button" type="button" hidden>Logout</button></div>
+      </form>
+      <select id="user-select" aria-label="Select demo user"></select>
     </section>
 
     <section class="stats" aria-label="Patient statistics">
@@ -92,7 +98,7 @@
 
     <section class="page" data-page="therapists" hidden>
     <section class="card therapist-admin" id="therapist-admin" aria-labelledby="therapists-heading">
-      <div class="section-title" id="therapists-heading">👩‍⚕️ Therapist list</div>
+      <div class="section-title" id="therapists-heading">👩‍⚕️ Therapist list</div><p class="empty">Admins can add therapist profiles here, then use Supabase Auth Users or an invite link to let the therapist set a password.</p>
       <form id="therapist-form" class="form compact-form">
         <input name="name" required placeholder="Therapist name" />
         <input name="phone" placeholder="Phone" inputmode="tel" />
@@ -180,6 +186,8 @@
       </section>
     </section>
   </main>
+  <script src="./src/config.js"></script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script type="module" src="./src/main.js"></script>
 </body>

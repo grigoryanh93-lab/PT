@@ -9,6 +9,8 @@ mkdirSync(dist, { recursive: true });
 
 copyFileSync(join(root, 'index.html'), join(dist, 'index.html'));
 cpSync(join(root, 'src'), join(dist, 'src'), { recursive: true });
+const config = `window.PT_APP_CONFIG = {\n  supabaseUrl: '${process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''}',\n  supabaseAnonKey: '${process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || ''}',\n};\n`;
+writeFileSync(join(dist, 'src', 'config.js'), config);
 writeFileSync(join(dist, '.nojekyll'), '');
 
 console.log('Built GitHub Pages site in dist/');

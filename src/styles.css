@@ -131,3 +131,7 @@ button.danger { background: #fee2e2; color: #991b1b; }
 .report-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 18px; padding: 14px; min-width: 0; overflow-wrap: anywhere; }
 @media (max-width: 899px) { .grid-four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 620px) { .grid-four { grid-template-columns: 1fr; } .patient-header { flex-direction: column; } .pill { white-space: normal; } }
+.auth-form { display: grid; gap: 0.75rem; width: 100%; }
+.auth-form[hidden] { display: none; }
+.login { align-items: stretch; }
+@media (min-width: 760px) { .auth-form { grid-template-columns: 1fr 1fr 1fr; align-items: center; } .auth-form .button-row { grid-column: 1 / -1; } }
