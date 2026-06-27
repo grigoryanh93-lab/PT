@@ -8,7 +8,7 @@
 </head>
 <body>
   <main>
-    <nav class="app-nav" aria-label="Main pages">
+    <nav class="app-nav" aria-label="Main pages" hidden>
       <button type="button" class="nav-link" data-page-target="dashboard">🏠<span>Dashboard</span></button>
       <button type="button" class="nav-link" data-page-target="patients">👥<span>Patients</span></button>
       <button type="button" class="nav-link" data-page-target="schedule">🗓️<span>Schedule</span></button>
@@ -17,7 +17,7 @@
       <button type="button" class="nav-link" data-page-target="import">☁️<span>Import</span></button>
       <button type="button" class="nav-link" data-page-target="reports">📈<span>Reports</span></button>
     </nav>
-    <header class="hero">
+    <header class="hero" hidden>
       <div>
         <p class="eyebrow">HomePT Pro</p>
         <h1>HomePT Pro</h1>
@@ -37,13 +37,13 @@
       <select id="user-select" aria-label="Select local fallback user"></select>
     </section>
 
-    <section class="stats" aria-label="Patient statistics">
+    <section class="stats" aria-label="Patient statistics" hidden>
       <div><span>👥</span><strong id="patient-count">0</strong><small>patients</small></div>
       <div><span>✅</span><strong id="visit-count">0</strong><small>visits remaining</small></div>
       <div><span>🗓️</span><strong id="scheduled-count">0</strong><small>scheduled visits</small></div>
     </section>
 
-    <section class="page" data-page="dashboard">
+    <section class="page" data-page="dashboard" hidden>
     <section class="card dashboard" aria-labelledby="today-heading">
       <div class="section-title" id="today-heading">🏠 Today’s visits</div>
       <div id="today-list" class="today-list"></div>
