@@ -1,1 +1,10 @@
-{"type":"module","scripts":{"test":"node --test","start":"python3 -m http.server 4173"},"dependencies":{},"devDependencies":{}}
+{
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "python3 -m http.server 4173",
+    "build": "node scripts/build.js"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
