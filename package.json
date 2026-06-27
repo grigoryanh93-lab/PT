@@ -1,9 +1,13 @@
 {
+  "name": "home-health-pt-scheduler",
+  "version": "1.0.0",
+  "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test",
     "start": "python3 -m http.server 4173",
-    "build": "node scripts/build.js"
+    "build": "node scripts/build.js",
+    "preview": "python3 -m http.server 4173 -d dist",
+    "test": "node --test"
   },
   "dependencies": {},
   "devDependencies": {}
