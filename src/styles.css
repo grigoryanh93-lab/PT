@@ -20,7 +20,7 @@ input, select, textarea { width: 100%; background: #f7fbfa; border: 1px solid #d
 textarea { min-height: 86px; resize: vertical; }
 label, legend { color: #475569; font-size: .9rem; font-weight: 700; }
 fieldset { border: 1px solid #dbe7e4; border-radius: 20px; padding: 12px; }
-.grid-two, .button-row, .login { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: center; }
+.grid-two, .grid-four, .button-row, .login { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: center; }
 .schedule-fields { display: grid; gap: 8px; }
 .check-row { display: grid; grid-template-columns: auto 1fr 110px 125px; align-items: center; gap: 8px; }
 .check-row input[type="checkbox"], .check-inline input { width: auto; min-height: auto; }
@@ -125,3 +125,9 @@ button.danger { background: #fee2e2; color: #991b1b; }
   .nav-link span { font-size: .62rem; }
   .app-feedback { bottom: calc(82px + env(safe-area-inset-bottom)); }
 }
+
+.grid-four { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-items: end; }
+.reports-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 12px; }
+.report-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 18px; padding: 14px; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 899px) { .grid-four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .grid-four { grid-template-columns: 1fr; } .patient-header { flex-direction: column; } .pill { white-space: normal; } }

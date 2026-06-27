@@ -3,6 +3,7 @@ import {
   VISIT_STATUSES,
   VISIT_STATUS_LABELS,
   WEEK_DAYS,
+  buildReports,
   buildScheduleSuggestions,
   createVisitLog,
   filterVisits,
@@ -14,6 +15,7 @@ import {
   getNextScheduledVisit,
   getTodaysVisits,
   getVisiblePatients,
+  getTherapistProductivity,
   getWeeklySchedule,
   groupPatientsByArea,
   initialPatients,
@@ -73,6 +75,13 @@ const patientImportPreview = $('#patient-import-preview');
 const confirmPatientImport = $('#confirm-patient-import');
 const clearPatientImport = $('#clear-patient-import');
 const sampleImport = $('#sample-import');
+const generateNextWeek = $('#generate-next-week');
+const applyAllSuggestions = $('#apply-all-suggestions');
+const scheduleFilters = $('#schedule-filters');
+const dailyView = $('#daily-view');
+const reportsSummary = $('#reports-summary');
+const exportReportCsv = $('#export-report-csv');
+const patientSearch = $('#patient-search');
 const photoImport = $('#photo-import');
 const exportPatientsCsv = $('#export-patients-csv');
 const exportPatientsExcel = $('#export-patients-excel');
@@ -134,7 +143,8 @@ function fillTherapistForm(therapistId) {
   const therapist = therapists.find((item) => item.id === therapistId);
   if (!therapist) return;
   editingTherapistId = therapistId;
-  ['name', 'phone', 'email', 'role'].forEach((field) => { therapistForm.elements[field].value = therapist[field] || ''; });
+  ['name', 'phone', 'email', 'role', 'availability'].forEach((field) => { therapistForm.elements[field].value = therapist[field] || ''; });
+  therapistForm.elements.serviceAreas.value = (therapist.serviceAreas || []).join(', ');
   therapistForm.elements.active.checked = therapist.active !== false;
   therapistSubmit.textContent = 'Save therapist';
   cancelTherapistEdit.hidden = false;
@@ -335,7 +345,7 @@ function renderPatient(patient) {
   const schedule = patient.schedule?.length ? patient.schedule.map((visit) => `<li><span>${escapeHtml(visit.day)} at ${escapeHtml(formatTime(visit.time))} · ${escapeHtml(VISIT_STATUS_LABELS[visit.status] || visit.status)} · ${escapeHtml(therapistName(visit.therapistId))}</span>${renderVisitControls(patient, visit)}</li>`).join('') : '<li>Not scheduled</li>';
   const historyHtml = history.length ? history.slice(0, 5).map((log) => `<li>${escapeHtml(log.date)} · ${escapeHtml(log.completedTime || '—')} · ${escapeHtml(log.therapistName)} · ${escapeHtml(VISIT_STATUS_LABELS[log.status] || log.status)}${log.note ? ` · ${escapeHtml(log.note)}` : ''}</li>`).join('') : '<li>No completed visit logs yet</li>';
   return `<article class="card patient-card">
-    <div class="patient-header"><div><h3>${escapeHtml(patient.name)}</h3><p>${escapeHtml(patient.agency || 'No agency')} · ${escapeHtml(patient.frequency)} · ${Number(patient.visitsRemaining || 0)} visits left</p></div><span class="pill ${auth.level}">${escapeHtml(auth.label)}</span></div>
+    <div class="patient-header"><div><h3>${escapeHtml(patient.name)}</h3><p><span class="pill neutral">${escapeHtml(patient.status || 'Active')}</span> ${escapeHtml(patient.agency || 'No agency')} · ${escapeHtml(patient.frequency)} · ${Number(patient.visitsRemaining || 0)} visits left</p><p>Auth: ${Number(patient.approvedVisits || 0)} approved · ${Number(patient.usedVisits || 0)} used · ${Number(patient.visitsRemaining || 0)} remaining</p></div><span class="pill ${auth.level}">${escapeHtml(auth.label)}</span></div>
     ${lowWarning ? '<p class="warning-text">⚠️ Low visits remaining. Request authorization soon.</p>' : ''}<p>👩‍⚕️ ${escapeHtml(therapistName(patient.therapistId))}</p><p>👀 Last seen: ${escapeHtml(lastSeen)} · Next: ${nextVisit ? `${escapeHtml(nextVisit.day)} ${escapeHtml(formatTime(nextVisit.time))}` : 'None scheduled'}</p><p>📍 ${escapeHtml(patient.area)} · ${escapeHtml(patient.address)}</p><p>📱 ${escapeHtml(patient.phone || 'No phone listed')}</p>
     <div><strong>📅 Weekly schedule</strong><ul>${schedule}</ul></div>
     <p>⭐ Prefers ${escapeHtml(patient.preferredDays?.join(', ') || 'any day')} ${patient.preferredTimes ? `· ${escapeHtml(patient.preferredTimes)}` : ''}</p>
@@ -354,8 +364,13 @@ function renderCalendar() {
   appointmentForm.elements.therapistId.innerHTML = therapistOptions(appointmentForm.elements.therapistId.value);
   appointmentForm.elements.day.innerHTML = WEEK_DAYS.map((day) => `<option value="${day}">${day}</option>`).join('');
   appointmentForm.elements.status.innerHTML = statusOptions(appointmentForm.elements.status.value || 'scheduled');
+  scheduleFilters.elements.therapistId.innerHTML = '<option value="">All therapists</option>' + therapistOptions(scheduleFilters.elements.therapistId.value);
+  scheduleFilters.elements.status.innerHTML = '<option value="">All statuses</option>' + statusOptions(scheduleFilters.elements.status.value);
+  const filters = Object.fromEntries(new FormData(scheduleFilters).entries());
+  const filteredDaily = filterVisits(shown, filters, visitLogs).filter((visit) => !filters.area || String(visit.patient.area || '').toLowerCase().includes(String(filters.area).toLowerCase()));
+  dailyView.innerHTML = filters.date || filters.therapistId || filters.status || filters.area ? (filteredDaily.length ? filteredDaily.map((visit) => `<article class="visit ${visit.status}"><strong>${escapeHtml(visit.date)} · ${escapeHtml(formatTime(visit.time))}</strong><span>${escapeHtml(visit.patient.name)}</span><small>${escapeHtml(visit.patient.area)} · ${escapeHtml(therapistName(visit.therapistId))}</small>${renderVisitControls(visit.patient, visit)}${patientActions(visit.patient)}</article>`).join('') : '<p class="empty">No appointments match these filters.</p>') : '<p class="empty">Use filters above for daily view by therapist, date, status, or area.</p>';
   const week = getWeeklySchedule(shown);
-  calendar.innerHTML = WEEK_DAYS.map((day) => `<section class="day"><h3>${day}</h3>${week[day].length ? week[day].map((visit) => `<div class="slot ${visit.status}"><strong>${escapeHtml(formatTime(visit.time))}</strong><span>${escapeHtml(visit.patient.name)}</span><small>${escapeHtml(visit.patient.area)} · ${escapeHtml(therapistName(visit.therapistId))} · ${escapeHtml(VISIT_STATUS_LABELS[visit.status] || visit.status)}</small><div class="visit-controls"><button type="button" data-edit-appointment="${visit.patient.id}|${visit.id}">Edit</button><button type="button" class="danger" data-delete-appointment="${visit.patient.id}|${visit.id}">Delete</button></div>${renderVisitControls(visit.patient, visit)}</div>`).join('') : '<p>No visits</p>'}</section>`).join('');
+  calendar.innerHTML = WEEK_DAYS.map((day) => `<section class="day"><h3>${day}</h3>${week[day].length ? week[day].map((visit) => `<div class="slot ${visit.status}"><strong>${escapeHtml(formatTime(visit.time))}</strong><span>${escapeHtml(visit.patient.name)}</span><small>${escapeHtml(visit.patient.area)} · ${escapeHtml(therapistName(visit.therapistId))} · ${escapeHtml(VISIT_STATUS_LABELS[visit.status] || visit.status)}</small><div class="visit-controls"><button type="button" data-edit-appointment="${visit.patient.id}|${visit.id}">Edit</button><button type="button" class="danger" data-delete-appointment="${visit.patient.id}|${visit.id}">Delete</button></div>${renderVisitControls(visit.patient, visit)}${patientActions(visit.patient)}</div>`).join('') : '<p>No visits</p>'}</section>`).join('');
 }
 
 function renderTherapists() {
@@ -365,7 +380,7 @@ function renderTherapists() {
   therapistAdmin.hidden = false;
   patientImportSection.hidden = user.role !== 'admin';
   backupSection.hidden = user.role !== 'admin';
-  therapistList.innerHTML = therapists.map((therapist) => { const assigned = patients.filter((patient) => patient.therapistId === therapist.id); const completed = visitLogs.filter((log) => log.therapistId === therapist.id && log.status === 'done').length; return `<article class="therapist-row"><strong>${escapeHtml(therapist.name)}</strong><span>${escapeHtml(therapist.phone || 'No phone')}</span><span>${assigned.length} patient${assigned.length === 1 ? '' : 's'} · ${completed} done</span><div class="actions-inline"><button data-edit-therapist="${therapist.id}" type="button">Edit</button><button data-toggle-therapist="${therapist.id}" type="button">${therapist.active ? 'Active' : 'Inactive'}</button><button class="danger" data-delete-therapist="${therapist.id}" type="button">Delete</button></div></article>`; }).join('');
+  therapistList.innerHTML = therapists.map((therapist) => { const assigned = patients.filter((patient) => patient.therapistId === therapist.id); const productivity = getTherapistProductivity(patients, [therapist], visitLogs)[0]; return `<article class="therapist-row"><strong>${escapeHtml(therapist.name)}</strong><span>${escapeHtml(therapist.phone || 'No phone')}</span><span>${assigned.length} patient${assigned.length === 1 ? '' : 's'} · ${productivity.completedToday} done today · ${productivity.pending} pending · ${escapeHtml((therapist.serviceAreas || []).join(', ') || 'No areas')}</span><div class="actions-inline"><button data-edit-therapist="${therapist.id}" type="button">Edit</button><button data-toggle-therapist="${therapist.id}" type="button">${therapist.active ? 'Active' : 'Inactive'}</button><button class="danger" data-delete-therapist="${therapist.id}" type="button">Delete</button></div></article>`; }).join('');
   form.elements.therapistId.innerHTML = therapistOptions(user.role === 'therapist' ? user.id : '');
   form.elements.therapistId.disabled = user.role !== 'admin';
 }
@@ -383,12 +398,19 @@ function renderAdminDashboard() {
   adminDashboard.hidden = user.role !== 'admin';
   if (user.role !== 'admin') return;
   const summary = getAdminVisitSummary(patients, visitLogs);
+  const reports = buildReports(patients, therapists, visitLogs);
+  const todayTotal = getTodaysVisits(patients).length;
   adminStats.innerHTML = `
+    <div><strong>${todayTotal}</strong><small>scheduled today</small></div>
     <div><strong>${summary.completedToday}</strong><small>completed today</small></div>
-    <div><strong>${summary.notCompletedToday}</strong><small>not completed today</small></div>
-    <div><strong>${summary.missed}</strong><small>missed today</small></div>
-    <div><strong>${summary.cancelled}</strong><small>cancelled today</small></div>
-    <div><strong>${summary.overduePatients}</strong><small>overdue patients</small></div>`;
+    <div><strong>${summary.notCompletedToday}</strong><small>pending today</small></div>
+    <div><strong>${summary.missed}</strong><small>missed visits</small></div>
+    <div><strong>${summary.cancelled}</strong><small>cancelled visits</small></div>
+    <div><strong>${summary.overduePatients}</strong><small>overdue patients</small></div>
+    <div><strong>${reports.lowAuthorization.length}</strong><small>low auth visits</small></div>
+    <div><strong>${reports.expiringAuthorization.length}</strong><small>auth expiring soon</small></div>
+    <div><strong>${reports.weeklyVisitTotal}</strong><small>visits this week</small></div>
+    <div><strong>${reports.productivity.map((item) => `${escapeHtml(item.therapist.name)} ${item.completedToday}/${item.pending}`).join('<br>')}</strong><small>productivity done/pending</small></div>`;
   visitFilters.elements.therapistId.innerHTML = '<option value="">All therapists</option>' + therapistOptions(visitFilters.elements.therapistId.value);
   visitFilters.elements.patientId.innerHTML = '<option value="">All patients</option>' + patients.map((patient) => `<option value="${patient.id}" ${visitFilters.elements.patientId.value === patient.id ? 'selected' : ''}>${escapeHtml(patient.name)}</option>`).join('');
   visitFilters.elements.status.innerHTML = '<option value="">All statuses</option>' + statusOptions(visitFilters.elements.status.value);
@@ -402,14 +424,31 @@ function renderNeedsSeen() {
   needsSeenList.innerHTML = items.length ? items.map(({ patient, reasons, lastSeen, nextScheduled }) => `<article class="visit warning"><strong>${escapeHtml(patient.name)}</strong><span>${reasons.map(escapeHtml).join(' · ')}</span><small>Last seen: ${escapeHtml(lastSeen || 'Never')} · Next: ${nextScheduled ? `${escapeHtml(nextScheduled.day)} ${escapeHtml(formatTime(nextScheduled.time))}` : 'None scheduled'}</small></article>`).join('') : '<p class="empty">No patients need attention right now.</p>';
 }
 
+
+function renderReports() {
+  if (!reportsSummary) return;
+  const reports = buildReports(patients, therapists, visitLogs);
+  const card = (title, body) => `<article class="report-card"><strong>${escapeHtml(title)}</strong>${body}</article>`;
+  reportsSummary.innerHTML = [
+    card('Therapist productivity', `<ul>${reports.productivity.map((item) => `<li>${escapeHtml(item.therapist.name)}: ${item.completedToday} today · ${item.completedThisWeek} week · ${item.pending} pending · ${item.missed} missed · ${item.patientsAssigned} patients</li>`).join('')}</ul>`),
+    card('Pending visits', `<p>${reports.pendingVisits.length}</p>`),
+    card('Patients not seen this week', `<ul>${reports.patientsNotSeenThisWeek.map((patient) => `<li>${escapeHtml(patient.name)}</li>`).join('') || '<li>None</li>'}</ul>`),
+    card('Overdue patients', `<ul>${reports.overdue.map((item) => `<li>${escapeHtml(item.patient.name)} — ${item.reasons.map(escapeHtml).join(' · ')}</li>`).join('') || '<li>None</li>'}</ul>`),
+    card('Low authorization', `<ul>${reports.lowAuthorization.map((patient) => `<li>${escapeHtml(patient.name)} — ${patient.visitsRemaining} remaining</li>`).join('') || '<li>None</li>'}</ul>`),
+    card('Expiring authorization', `<ul>${reports.expiringAuthorization.map((patient) => `<li>${escapeHtml(patient.name)} — ${escapeHtml(patient.authExpiration)}</li>`).join('') || '<li>None</li>'}</ul>`),
+    card('Weekly visit total', `<p>${reports.weeklyVisitTotal}</p>`),
+  ].join('');
+}
+
 function render() {
-  const shown = visiblePatients();
+  const search = String(patientSearch?.value || '').toLowerCase();
+  const shown = visiblePatients().filter((patient) => !search || [patient.name, patient.area, patient.address, patient.phone, patient.agency].some((value) => String(value || '').toLowerCase().includes(search)));
   patientCount.textContent = shown.length;
   visitCount.textContent = shown.reduce((sum, patient) => sum + Number(patient.visitsRemaining || 0), 0);
   scheduledCount.textContent = shown.reduce((sum, patient) => sum + patient.schedule.filter((visit) => visit.status === 'scheduled').length, 0);
   const groupedPatients = groupPatientsByArea(shown);
   areas.innerHTML = Object.entries(groupedPatients).map(([area, areaPatients]) => `<div class="area"><h2>${escapeHtml(area)}</h2>${areaPatients.map(renderPatient).join('')}</div>`).join('');
-  renderTherapists(); renderOptimize(); renderToday(); renderCalendar(); renderAdminDashboard(); renderNeedsSeen(); setActivePage(activePage);
+  renderTherapists(); renderOptimize(); renderToday(); renderCalendar(); renderAdminDashboard(); renderNeedsSeen(); renderReports(); setActivePage(activePage);
 }
 
 function readPatientFromForm() {
@@ -420,12 +459,14 @@ function readPatientFromForm() {
     const oldVisit = existing?.schedule?.find((visit) => visit.day === day);
     return { id: oldVisit?.id || id('v'), day, time: data.get(`time-${day}`) || '', status: data.get(`status-${day}`) || 'scheduled', therapistId, completedBy: oldVisit?.completedBy || '', completedAt: oldVisit?.completedAt || '', note: oldVisit?.note || '' };
   });
-  return { id: editingId || id('p'), name: data.get('name'), area: data.get('area'), address: data.get('address'), phone: data.get('phone'), agency: data.get('agency'), therapistId, visitsRemaining: Number(data.get('visitsRemaining') || 0), frequency: data.get('frequency'), preferredDays: data.getAll('preferredDay'), preferredTimes: data.get('preferredTimes'), authExpiration: data.get('authExpiration'), notes: data.get('notes'), schedule };
+  return { id: editingId || id('p'), name: data.get('name'), area: data.get('area'), address: data.get('address'), phone: data.get('phone'), agency: data.get('agency'), status: data.get('status'), approvedVisits: Number(data.get('approvedVisits') || 0), usedVisits: Number(data.get('usedVisits') || 0), therapistId, visitsRemaining: Number(data.get('visitsRemaining') || 0), frequency: data.get('frequency'), preferredDays: data.getAll('preferredDay'), preferredTimes: data.get('preferredTimes'), authExpiration: data.get('authExpiration'), notes: data.get('notes'), schedule };
 }
 
 function fillForm(patient) {
   editingId = patient.id; formTitle.textContent = `✏️ Edit ${patient.name}`; cancelEdit.hidden = false;
-  ['name', 'area', 'address', 'phone', 'agency', 'frequency', 'authExpiration', 'notes', 'preferredTimes'].forEach((field) => { form.elements[field].value = patient[field] || ''; });
+  ['name', 'area', 'address', 'phone', 'agency', 'status', 'frequency', 'authExpiration', 'notes', 'preferredTimes'].forEach((field) => { form.elements[field].value = patient[field] || ''; });
+  form.elements.approvedVisits.value = patient.approvedVisits || 0;
+  form.elements.usedVisits.value = patient.usedVisits || 0;
   form.elements.visitsRemaining.value = patient.visitsRemaining || 0;
   form.elements.therapistId.innerHTML = therapistOptions(patient.therapistId);
   $('#preferred-days').innerHTML = preferredDayFields(patient.preferredDays);
@@ -440,7 +481,7 @@ function resetForm() {
 
 form.addEventListener('submit', (event) => { event.preventDefault(); runAction(editingId ? 'Patient updated.' : 'Patient saved.', () => { const patient = readPatientFromForm(); patients = editingId ? patients.map((item) => (item.id === editingId ? patient : item)) : [...patients, patient]; savePatients(patients); resetForm(); resetTherapistForm(); resetAppointmentForm(); renderPatientImportPreview(); render(); }); });
 
-therapistForm.addEventListener('submit', (event) => { event.preventDefault(); runAction('Therapist saved.', () => { const data = new FormData(therapistForm); const therapist = { id: editingTherapistId || id('t'), name: data.get('name'), phone: data.get('phone'), email: data.get('email'), role: data.get('role'), active: data.get('active') === 'on' }; therapists = editingTherapistId ? therapists.map((item) => (item.id === editingTherapistId ? therapist : item)) : [...therapists, therapist]; saveTherapists(therapists); resetTherapistForm(); render(); }); });
+therapistForm.addEventListener('submit', (event) => { event.preventDefault(); runAction('Therapist saved.', () => { const data = new FormData(therapistForm); const therapist = { id: editingTherapistId || id('t'), name: data.get('name'), phone: data.get('phone'), email: data.get('email'), role: data.get('role'), serviceAreas: String(data.get('serviceAreas') || '').split(',').map((area) => area.trim()).filter(Boolean), availability: data.get('availability'), active: data.get('active') === 'on' }; therapists = editingTherapistId ? therapists.map((item) => (item.id === editingTherapistId ? therapist : item)) : [...therapists, therapist]; saveTherapists(therapists); resetTherapistForm(); render(); }); });
 
 
 appointmentForm.addEventListener('submit', (event) => { event.preventDefault(); runAction(editingAppointment ? 'Appointment updated.' : 'Appointment added.', () => {
@@ -462,6 +503,9 @@ cancelTherapistEdit.addEventListener('click', () => runAction('Therapist edit ca
 
 userSelect.addEventListener('change', () => runAction('User view changed.', () => { currentUserId = userSelect.value; saveSession(currentUserId); resetForm(); renderPatientImportPreview(); render(); }));
 visitFilters.addEventListener('change', () => renderAdminDashboard());
+scheduleFilters.addEventListener('change', () => renderCalendar());
+scheduleFilters.addEventListener('input', () => renderCalendar());
+patientSearch.addEventListener('input', () => render());
 
 optimizeButton.addEventListener('click', () => runAction('', () => {
   const patient = patients.find((item) => item.id === optimizePatient.value);
@@ -478,12 +522,28 @@ optimizeButton.addEventListener('click', () => runAction('', () => {
     return;
   }
   pendingSuggestions = buildScheduleSuggestions(patient, patients, therapists);
+  applyAllSuggestions.disabled = !pendingSuggestions.length;
   suggestions.innerHTML = pendingSuggestions.length ? pendingSuggestions.map((option, index) => `<article class="suggestion"><strong>${escapeHtml(option.day)} at ${escapeHtml(formatTime(option.time))}</strong><span>${escapeHtml(option.reason)}</span><div class="button-row"><button class="primary" data-apply-suggestion="${index}" type="button">Apply Suggestion</button><button data-edit-suggestion="${index}" type="button">Edit & Apply</button></div></article>`).join('') : '<p class="empty error">No suggestion available for this patient.</p>';
   showFeedback(`${pendingSuggestions.length} schedule suggestion${pendingSuggestions.length === 1 ? '' : 's'} generated.`);
 }));
 
+generateNextWeek.addEventListener('click', () => runAction('Next week suggestions generated.', () => {
+  pendingSuggestions = visiblePatients().flatMap((patient) => buildScheduleSuggestions(patient, patients, therapists).slice(0, 1).map((option) => ({ ...option, patientId: patient.id })));
+  applyAllSuggestions.disabled = !pendingSuggestions.length;
+  suggestions.innerHTML = pendingSuggestions.length ? pendingSuggestions.map((option, index) => `<article class="suggestion"><strong>${escapeHtml(therapistName(option.therapistId))} · ${escapeHtml(option.day)} at ${escapeHtml(formatTime(option.time))}</strong><span>${escapeHtml(option.reason)}</span><button class="primary" data-apply-suggestion="${index}" type="button">Apply Suggestion</button></article>`).join('') : '<p class="empty error">No next week suggestions available.</p>';
+}));
+applyAllSuggestions.addEventListener('click', () => runAction('All suggestions applied.', () => {
+  patients = patients.map((patient) => ({ ...patient, schedule: [...patient.schedule, ...pendingSuggestions.filter((option) => (option.patientId || optimizePatient.value) === patient.id).map((option) => ({ id: id('v'), day: option.day, time: option.time, status: 'scheduled', therapistId: option.therapistId, completedBy: '', completedAt: '', note: '' }))] }));
+  savePatients(patients); pendingSuggestions = []; applyAllSuggestions.disabled = true; suggestions.innerHTML = '<p class="empty">All suggestions applied.</p>'; render();
+}));
+exportReportCsv.addEventListener('click', () => runAction('Report CSV exported.', () => {
+  const reports = buildReports(patients, therapists, visitLogs);
+  const rows = [['Report','Name','Value'], ...reports.productivity.map((item) => ['Therapist productivity', item.therapist.name, `${item.completedThisWeek} completed; ${item.pending} pending; ${item.missed} missed`]), ['Weekly visit total', '', reports.weeklyVisitTotal]];
+  const blob = new Blob([rows.map((row) => row.map(csvEscape).join(',')).join('\n')], { type: 'text/csv' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `pt-report-${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(link.href);
+}));
+
 document.addEventListener('click', (event) => {
-  const target = event.target.closest('button[data-edit], button[data-delete], button[data-toggle-therapist], button[data-delete-therapist], button[data-edit-therapist], button[data-edit-appointment], button[data-delete-appointment], button[data-apply-suggestion], button[data-edit-suggestion], button[data-visit-action], a.action');
+  const target = event.target.closest('button[data-edit], button[data-delete], button[data-toggle-therapist], button[data-delete-therapist], button[data-edit-therapist], button[data-edit-appointment], button[data-delete-appointment], button[data-apply-suggestion], button[data-edit-suggestion], button[data-visit-action], button[data-apply-all-suggestions], a.action');
   if (!target) return;
   const { edit: editId, delete: deleteId, toggleTherapist, deleteTherapist, editTherapist, editAppointment, deleteAppointment, applySuggestion, editSuggestion, visitAction, patientId: actionPatientId, visitId: actionVisitId } = target.dataset;
   if (target.matches('a.action')) showFeedback(`${target.textContent.trim()} opened.`);
@@ -504,6 +564,7 @@ document.addEventListener('click', (event) => {
       });
       return {
         ...patient,
+        usedVisits: shouldReduceRemaining ? Number(patient.usedVisits || 0) + 1 : Number(patient.usedVisits || 0),
         visitsRemaining: shouldReduceRemaining ? Math.max(0, Number(patient.visitsRemaining || 0) - 1) : Number(patient.visitsRemaining || 0),
         schedule,
       };
@@ -521,7 +582,7 @@ document.addEventListener('click', (event) => {
   if (applySuggestion !== undefined || editSuggestion !== undefined) runAction('Schedule suggestion applied.', () => {
     const suggestionIndex = Number(applySuggestion ?? editSuggestion);
     const option = pendingSuggestions[suggestionIndex];
-    const patientId = optimizePatient.value;
+    const patientId = option.patientId || optimizePatient.value;
     if (!patientId) throw new Error('Select a patient before applying a suggestion.');
     if (!option) throw new Error('That schedule suggestion is no longer available. Run Optimize Schedule again.');
     const time = editSuggestion !== undefined ? prompt('Edit suggested time (HH:MM)', option.time) || option.time : option.time;

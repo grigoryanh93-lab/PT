@@ -116,3 +116,19 @@ test('tracks last seen, next scheduled visit, and needs-to-be-seen reasons', () 
   assert.equal(needsSeen.some((item) => item.patient.id === 'p-1' && item.reasons.includes('Scheduled today but not Done')), true);
   assert.equal(needsSeen.some((item) => item.patient.id === 'p-2' && item.reasons.includes('Remaining visits but no upcoming schedule')), true);
 });
+
+test('builds reports and therapist productivity summaries', async () => {
+  const { buildReports, getTherapistProductivity } = await import('../src/storage.js');
+  const therapists = [{ id: 't-1', name: 'Therapist A', role: 'PT', active: true }];
+  const patients = [
+    { id: 'p-1', name: 'A', therapistId: 't-1', visitsRemaining: 1, authExpiration: '2026-06-30', frequency: '1x/week', schedule: [{ id: 'v-1', day: 'Thursday', status: 'scheduled', therapistId: 't-1' }] },
+  ];
+  const today = new Date('2026-06-25T12:00:00Z');
+  const productivity = getTherapistProductivity(patients, therapists, [], today)[0];
+  assert.equal(productivity.pending, 1);
+  assert.equal(productivity.patientsAssigned, 1);
+  const reports = buildReports(patients, therapists, [], today);
+  assert.equal(reports.pendingVisits.length, 1);
+  assert.equal(reports.lowAuthorization.length, 1);
+  assert.equal(reports.expiringAuthorization.length, 1);
+});
