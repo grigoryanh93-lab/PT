@@ -31,6 +31,21 @@ const therapistToRows = (therapist) => ({
   profile: { id: therapist.id, full_name: therapist.name, email: therapist.email, role: therapist.role === 'admin' ? 'admin' : 'therapist' },
 });
 
+const visitLogToRows = (log) => ({
+  id: log.id,
+  patient_id: log.patientId || log.patient_id,
+  patient_name: log.patientName || log.patient_name,
+  therapist_id: log.therapistId || log.therapist_id,
+  therapist_name: log.therapistName || log.therapist_name,
+  visit_id: log.visitId || log.visit_id || null,
+  date: log.date,
+  scheduled_day: log.scheduledDay || log.scheduled_day || null,
+  scheduled_time: log.scheduledTime || log.scheduled_time || null,
+  completed_time: log.completedTime || log.completed_time || null,
+  status: log.status || 'done',
+  note: log.note || '',
+});
+
 export async function getSession() { return (await supabaseClient.auth.getSession()).data.session; }
 export async function signIn(email, password) { const { error } = await supabaseClient.auth.signInWithPassword({ email, password }); if (error) throw error; }
 export async function signUp(email, password, fullName) { const { error } = await supabaseClient.auth.signUp({ email, password, options: { data: { full_name: fullName } } }); if (error) throw error; }
@@ -57,7 +72,7 @@ export async function loadSharedData() {
     appointmentsByPatient.set(row.patient_id, [...(appointmentsByPatient.get(row.patient_id) || []), visit]);
   });
   const patients = (patientRows || []).map((row) => normalizePatient({ ...toCamel(row), schedule: normalizeSchedule(appointmentsByPatient.get(row.id) || [], toCamel(row)) }));
-  return { therapists, patients, visitLogs: logs || [] };
+  return { therapists, patients, visitLogs: (logs || []).map(toCamel) };
 }
 
 export async function savePatientShared(patient) {
@@ -69,4 +84,19 @@ export async function savePatientShared(patient) {
 export async function deletePatientShared(patientId) { const { error } = await supabaseClient.from('patients').delete().eq('id', patientId); if (error) throw error; }
 export async function saveTherapistShared(therapist) { const rows = therapistToRows(therapist); let res = await supabaseClient.from('profiles').upsert(rows.profile); if (res.error) throw res.error; res = await supabaseClient.from('therapists').upsert(rows.therapist); if (res.error) throw res.error; }
 export async function deleteTherapistShared(id) { const { error } = await supabaseClient.from('therapists').delete().eq('id', id); if (error) throw error; }
-export async function saveVisitLogShared(log) { const { error } = await supabaseClient.from('visit_logs').upsert(log); if (error) throw error; }
+export async function saveVisitLogShared(log) {
+  const row = visitLogToRows(log);
+  const { error } = await supabaseClient.from('visit_logs').upsert(row); if (error) throw error;
+  const { error: historyError } = await supabaseClient.from('visit_history').upsert({ ...row, visit_log_id: row.id }); if (historyError) throw historyError;
+}
+export async function savePatientImportShared(importBatch) {
+  const { error } = await supabaseClient.from('uploaded_patient_imports').insert({
+    file_name: importBatch.fileName,
+    imported_by: importBatch.importedBy,
+    row_count: importBatch.rowCount,
+    imported_count: importBatch.importedCount,
+    error_count: importBatch.errorCount,
+    raw_rows: importBatch.rows,
+  });
+  if (error) throw error;
+}
