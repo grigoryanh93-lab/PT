@@ -15,6 +15,7 @@
       <button type="button" class="nav-link" data-page-target="therapists">👩‍⚕️<span>Therapists</span></button>
       <button type="button" class="nav-link" data-page-target="optimize">⚡<span>Optimize</span></button>
       <button type="button" class="nav-link" data-page-target="import">☁️<span>Import</span></button>
+      <button type="button" class="nav-link" data-page-target="reports">📈<span>Reports</span></button>
     </nav>
     <header class="hero">
       <div>
@@ -71,6 +72,8 @@
         <label>Status<select name="status"></select></label>
         <div class="button-row"><button class="primary" type="submit">Save appointment</button><button id="cancel-appointment-edit" type="button" hidden>Cancel edit</button></div>
       </form>
+      <form id="schedule-filters" class="form compact-form"><div class="grid-four"><label>Therapist<select name="therapistId"></select></label><label>Date<input name="date" type="date" /></label><label>Status<select name="status"></select></label><label>Area/city<input name="area" placeholder="All areas" /></label></div></form>
+      <div id="daily-view" class="today-list"></div>
       <div id="calendar" class="calendar"></div>
     </section>
 
@@ -81,6 +84,7 @@
       <div class="section-title" id="optimize-heading">⚡ Optimize</div>
       <p>Suggest best day/time by city, nearby scheduled patients, assigned therapist, frequency, visits remaining, and preferred availability.</p>
       <div class="grid-two"><select id="optimize-patient"></select><button class="primary" id="optimize-button" type="button">Optimize Schedule</button></div>
+      <div class="button-row"><button id="generate-next-week" type="button">Generate Next Week’s Schedule</button><button id="apply-all-suggestions" class="primary" type="button" disabled>Apply All Suggestions</button></div>
       <div id="suggestions" class="suggestions"></div>
     </section>
 
@@ -93,7 +97,9 @@
         <input name="name" required placeholder="Therapist name" />
         <input name="phone" placeholder="Phone" inputmode="tel" />
         <input name="email" placeholder="Email" inputmode="email" />
-        <select name="role"><option value="therapist">Therapist</option><option value="admin">Admin</option></select>
+        <select name="role"><option value="admin">Admin</option><option value="PT">PT</option><option value="PTA">PTA</option><option value="OT">OT</option><option value="COTA">COTA</option></select>
+        <input name="serviceAreas" placeholder="Service areas (comma separated)" />
+        <input name="availability" placeholder="Available days/times" />
         <label class="check-inline"><input name="active" type="checkbox" checked /> Active</label>
         <div class="button-row"><button class="primary" type="submit" id="therapist-submit">Add therapist</button><button id="cancel-therapist-edit" type="button" hidden>Cancel edit</button></div>
       </form>
@@ -105,14 +111,18 @@
     <section class="page" data-page="patients" hidden>
     <form class="card form" id="patient-form">
       <div class="section-title" id="form-title">➕ Add patient</div>
+      <input id="patient-search" placeholder="Search patients" />
       <input required name="name" placeholder="Patient name" autocomplete="name" />
       <input required name="area" placeholder="City / area" />
       <input required name="address" placeholder="Address" autocomplete="street-address" />
       <input name="phone" placeholder="Phone number" inputmode="tel" autocomplete="tel" />
       <input name="agency" placeholder="Agency" />
+      <select name="status"><option>Active</option><option>Authorization pending</option><option>Needs recertification</option><option>Hospitalized</option><option>On hold</option><option>Discharged</option></select>
       <label id="therapist-field">Assigned therapist<select name="therapistId"></select></label>
       <div class="grid-two">
-        <input min="0" type="number" name="visitsRemaining" placeholder="Visits remaining" value="1" />
+        <input min="0" type="number" name="approvedVisits" placeholder="Approved visits" value="1" />
+        <input min="0" type="number" name="usedVisits" placeholder="Used visits" value="0" />
+        <input min="0" type="number" name="visitsRemaining" placeholder="Remaining visits" value="1" />
         <select name="frequency"><option>1x/week</option><option>2x/week</option><option>3x/week</option><option>PRN</option></select>
       </div>
       <label>Authorization expiration<input type="date" name="authExpiration" /></label>
@@ -160,6 +170,14 @@
       </div>
     </section>
 
+    </section>
+
+    <section class="page" data-page="reports" hidden>
+      <section class="card" aria-labelledby="reports-heading">
+        <div class="section-title" id="reports-heading">📈 Reports / Admin</div>
+        <div class="button-row"><button id="export-report-csv" class="primary" type="button">Export report CSV</button></div>
+        <div id="reports-summary" class="reports-grid"></div>
+      </section>
     </section>
   </main>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>

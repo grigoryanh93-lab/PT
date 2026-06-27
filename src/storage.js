@@ -11,9 +11,9 @@ export const VISIT_STATUS_LABELS = { scheduled: 'Scheduled', done: 'Done', misse
 export const LOW_VISIT_WARNING_THRESHOLD = 2;
 
 export const initialTherapists = [
-  { id: 't-admin', name: 'Admin User', phone: '(555) 010-0000', email: 'admin@pt.local', role: 'admin', active: true },
-  { id: 't-amy', name: 'Amy Nguyen, PT', phone: '(555) 011-1111', email: 'amy@pt.local', role: 'therapist', active: true },
-  { id: 't-ben', name: 'Ben Patel, PTA', phone: '(555) 012-2222', email: 'ben@pt.local', role: 'therapist', active: true },
+  { id: 't-admin', name: 'Admin User', phone: '(555) 010-0000', email: 'admin@pt.local', role: 'admin', active: true, serviceAreas: ['All'], availability: 'Weekdays' },
+  { id: 't-amy', name: 'Amy Nguyen, PT', phone: '(555) 011-1111', email: 'amy@pt.local', role: 'PT', active: true, serviceAreas: ['North Valley'], availability: 'Mon-Fri mornings' },
+  { id: 't-ben', name: 'Ben Patel, PTA', phone: '(555) 012-2222', email: 'ben@pt.local', role: 'PTA', active: true, serviceAreas: ['Eastside'], availability: 'Mon-Thu afternoons' },
 ];
 
 export const initialPatients = [
@@ -24,6 +24,9 @@ export const initialPatients = [
     address: '1128 Cedar Ave, North Valley',
     phone: '(555) 013-4451',
     agency: 'Sunrise Home Health',
+    status: 'Active',
+    approvedVisits: 12,
+    usedVisits: 4,
     therapistId: 't-amy',
     visitsRemaining: 8,
     frequency: '2x/week',
@@ -43,6 +46,9 @@ export const initialPatients = [
     address: '44 Oak Bend Rd, Eastside',
     phone: '(555) 018-2240',
     agency: 'CareBridge Agency',
+    status: 'Authorization pending',
+    approvedVisits: 8,
+    usedVisits: 4,
     therapistId: 't-ben',
     visitsRemaining: 4,
     frequency: '1x/week',
@@ -103,6 +109,9 @@ export function normalizePatient(patient) {
     notes: '',
     phone: '',
     therapistId: '',
+    status: 'Active',
+    approvedVisits: 0,
+    usedVisits: 0,
     visitsRemaining: 0,
     frequency: '1x/week',
     preferredDays: [],
@@ -110,7 +119,9 @@ export function normalizePatient(patient) {
     authExpiration: '',
     schedule: [],
     ...patient,
-    visitsRemaining: Number(patient.visitsRemaining || 0),
+    approvedVisits: Number(patient.approvedVisits || patient.approved || 0),
+    usedVisits: Number(patient.usedVisits || 0),
+    visitsRemaining: Number(patient.visitsRemaining ?? patient.remainingVisits ?? 0),
     preferredDays: Array.isArray(patient.preferredDays) ? patient.preferredDays : [],
   };
   normalized.schedule = normalizeSchedule(patient.schedule, normalized);
@@ -118,7 +129,7 @@ export function normalizePatient(patient) {
 }
 
 export function normalizeTherapist(therapist) {
-  return { phone: '', email: '', role: 'therapist', active: true, ...therapist, active: therapist.active !== false };
+  return { phone: '', email: '', role: 'PT', active: true, serviceAreas: [], availability: '', ...therapist, active: therapist.active !== false, serviceAreas: Array.isArray(therapist.serviceAreas) ? therapist.serviceAreas : String(therapist.serviceAreas || '').split(',').map((area) => area.trim()).filter(Boolean) };
 }
 
 export function loadPatients(storage = globalThis.localStorage) {
@@ -376,4 +387,32 @@ export function filterVisits(patients, filters = {}, logs = [], today = new Date
     if (filters.date && visit.date !== filters.date) return false;
     return true;
   });
+}
+
+
+export function getTherapistProductivity(patients, therapists, logs = [], today = new Date()) {
+  const todayKey = formatDateKey(today);
+  const weekVisits = patients.flatMap((patient) => normalizeSchedule(patient.schedule, patient).map((visit) => ({ ...visit, patient })));
+  return therapists.map((therapist) => ({
+    therapist,
+    completedToday: logs.filter((log) => log.therapistId === therapist.id && log.status === 'done' && log.date === todayKey).length + weekVisits.filter((visit) => visit.therapistId === therapist.id && visit.status === 'done' && getVisitDateForDay(visit.day, today) === todayKey).length,
+    completedThisWeek: logs.filter((log) => log.therapistId === therapist.id && log.status === 'done').length + weekVisits.filter((visit) => visit.therapistId === therapist.id && visit.status === 'done').length,
+    missed: weekVisits.filter((visit) => visit.therapistId === therapist.id && visit.status === 'missed').length,
+    pending: weekVisits.filter((visit) => visit.therapistId === therapist.id && visit.status === 'scheduled').length,
+    patientsAssigned: patients.filter((patient) => patient.therapistId === therapist.id).length,
+  }));
+}
+
+export function buildReports(patients, therapists, logs = [], today = new Date()) {
+  const allVisits = patients.flatMap((patient) => normalizeSchedule(patient.schedule, patient).map((visit) => ({ ...visit, patient, date: getVisitDateForDay(visit.day, today) })));
+  const productivity = getTherapistProductivity(patients, therapists, logs, today);
+  return {
+    productivity,
+    pendingVisits: allVisits.filter((visit) => visit.status === 'scheduled'),
+    patientsNotSeenThisWeek: patients.filter((patient) => !logs.some((log) => log.patientId === patient.id && log.status === 'done')),
+    overdue: getNeedsToBeSeenPatients(patients, logs, today),
+    lowAuthorization: patients.filter((patient) => Number(patient.visitsRemaining || 0) <= LOW_VISIT_WARNING_THRESHOLD),
+    expiringAuthorization: patients.filter((patient) => { const status = getAuthorizationStatus(patient, today); return status.days !== null && status.days <= 14; }),
+    weeklyVisitTotal: allVisits.length,
+  };
 }
