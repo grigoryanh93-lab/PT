@@ -64,7 +64,7 @@ The workflow in `.github/workflows/deploy-pages.yml` runs on pushes to `main` an
 
 ## Shared Supabase mode
 
-The app uses Supabase for shared authentication and permanent storage when the Vercel environment variables are present. If those variables are missing, it falls back to device-local cache storage only so the UI can still load for troubleshooting. Run `supabase-schema.sql` in the existing Supabase project before using shared patient data.
+The app uses Supabase for shared authentication and permanent storage when the Vercel environment variables are present. Production deployments must have Supabase configured; if the publishable key is missing outside localhost, the protected app shell stays locked behind the login screen and no local demo data is rendered. Local demo mode is available only on localhost when Supabase is not configured. Run `supabase-schema.sql` in the existing Supabase project before using shared patient data.
 
 ### Environment variables
 
@@ -89,7 +89,7 @@ Admins can see all patients, appointments, visit logs, reports, imports, and exp
 
 ### Offline/cache behavior
 
-Successful Supabase loads are cached to `localStorage`. If Supabase is unavailable, the app displays a warning and continues with the local cache so phone use is not blocked, but the source of truth for configured deployments is Supabase.
+Successful Supabase loads are cached to `localStorage` for local troubleshooting only. In configured production deployments, authentication is required before protected screens render; if the Supabase session is missing or expires, the app clears patient data from memory and returns to the login screen.
 
 
 ### Manual deployment steps still required

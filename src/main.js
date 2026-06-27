@@ -32,11 +32,13 @@ import {
 } from './storage.js';
 import { deletePatientShared, deleteTherapistShared, getSession, isSupabaseConfigured, loadSharedData, savePatientImportShared, savePatientShared, saveTherapistShared, saveVisitLogShared, signIn, signOut, signUp, supabaseClient } from './supabaseClient.js';
 
-let sharedMode = isSupabaseConfigured;
-let patients = sharedMode ? [] : loadPatients();
-let therapists = sharedMode ? [] : loadTherapists();
-let visitLogs = sharedMode ? [] : loadVisitLogs();
-let currentUserId = sharedMode ? '' : loadSession();
+const isLocalDemoHost = ['localhost', '127.0.0.1', '::1', ''].includes(globalThis.location?.hostname || '');
+const allowLocalDemoMode = !isSupabaseConfigured && isLocalDemoHost;
+let sharedMode = isSupabaseConfigured || !allowLocalDemoMode;
+let patients = allowLocalDemoMode ? loadPatients() : [];
+let therapists = allowLocalDemoMode ? loadTherapists() : [];
+let visitLogs = allowLocalDemoMode ? loadVisitLogs() : [];
+let currentUserId = allowLocalDemoMode ? loadSession() : '';
 let editingId = null;
 let editingTherapistId = null;
 let editingAppointment = null;
@@ -195,6 +197,7 @@ function runAction(label, action) {
 }
 const currentUser = () => therapists.find((therapist) => therapist.id === currentUserId) || { id: currentUserId || '', role: 'therapist', name: authSession?.user?.email || 'Signed out' };
 const isAuthRequired = () => sharedMode && !authSession;
+const isSupabaseMissingInProduction = () => sharedMode && !isSupabaseConfigured;
 const setProtectedShellHidden = (hidden) => {
   [appNav, hero, stats].forEach((element) => { if (element) element.hidden = hidden; });
   pageSections.forEach((section) => { section.hidden = hidden || section.dataset.page !== activePage; });
@@ -203,16 +206,18 @@ function renderAuthGate() {
   logoutButton.hidden = true;
   authForm.hidden = false;
   userSelect.hidden = true;
-  roleNote.textContent = 'Supabase is configured. Log in or create an account to access HomePT Pro.';
+  roleNote.textContent = isSupabaseMissingInProduction()
+    ? 'Authentication is required, but Supabase is not configured for this deployment. Add the production Supabase URL and publishable key before patient data can load.'
+    : 'Supabase is configured. Log in or create an account to access HomePT Pro.';
   setProtectedShellHidden(true);
 }
-const persistPatient = async (patient) => { savePatients(patients); if (sharedMode) await savePatientShared(patient); };
-const persistTherapist = async (therapist) => { saveTherapists(therapists); if (sharedMode) await saveTherapistShared(therapist); };
-const persistVisitLog = async (log) => { saveVisitLogs(visitLogs); if (sharedMode && log) await saveVisitLogShared(log); };
-const syncPatients = () => { savePatients(patients); if (sharedMode) Promise.allSettled(patients.map(savePatientShared)).then((results) => { if (results.some((result) => result.status === 'rejected')) showFeedback('Saved locally; Supabase sync needs attention.', 'error'); }); };
-const syncTherapists = () => { saveTherapists(therapists); if (sharedMode) Promise.allSettled(therapists.map(saveTherapistShared)); };
+const persistPatient = async (patient) => { savePatients(patients); if (isSupabaseConfigured) await savePatientShared(patient); };
+const persistTherapist = async (therapist) => { saveTherapists(therapists); if (isSupabaseConfigured) await saveTherapistShared(therapist); };
+const persistVisitLog = async (log) => { saveVisitLogs(visitLogs); if (isSupabaseConfigured && log) await saveVisitLogShared(log); };
+const syncPatients = () => { savePatients(patients); if (isSupabaseConfigured) Promise.allSettled(patients.map(savePatientShared)).then((results) => { if (results.some((result) => result.status === 'rejected')) showFeedback('Saved locally; Supabase sync needs attention.', 'error'); }); };
+const syncTherapists = () => { saveTherapists(therapists); if (isSupabaseConfigured) Promise.allSettled(therapists.map(saveTherapistShared)); };
 async function refreshSharedData() {
-  if (!sharedMode || !authSession) return;
+  if (!sharedMode || !authSession || !isSupabaseConfigured) return;
   const shared = await loadSharedData();
   therapists = shared.therapists;
   const signedInUser = currentUser();
@@ -482,8 +487,16 @@ function renderReports() {
   ].join('');
 }
 
+function ProtectedRoute(renderProtectedApp) {
+  if (isAuthRequired()) {
+    renderAuthGate();
+    return;
+  }
+  renderProtectedApp();
+}
+
 function render() {
-  if (isAuthRequired()) { renderAuthGate(); return; }
+  ProtectedRoute(() => {
   setProtectedShellHidden(false);
   logoutButton.hidden = !authSession;
   authForm.hidden = Boolean(authSession);
@@ -495,6 +508,7 @@ function render() {
   const groupedPatients = groupPatientsByArea(shown);
   areas.innerHTML = Object.entries(groupedPatients).map(([area, areaPatients]) => `<div class="area"><h2>${escapeHtml(area)}</h2>${areaPatients.map(renderPatient).join('')}</div>`).join('');
   renderTherapists(); renderOptimize(); renderToday(); renderCalendar(); renderAdminDashboard(); renderNeedsSeen(); renderReports(); setActivePage(activePage);
+  });
 }
 
 function readPatientFromForm() {
@@ -653,22 +667,22 @@ photoImport.addEventListener('click', () => showFeedback('Photo import will requ
 clearPatientImport.addEventListener('click', () => runAction('Import preview cleared.', () => { pendingPatientImport = []; patientImportFile.value = ''; renderPatientImportPreview(); }));
 sampleImport.addEventListener('click', () => runAction('Sample CSV parsed.', () => { pendingPatientImport = rowsToPatients(parseCsv(SAMPLE_CSV)); renderPatientImportPreview(); }));
 patientImportFile.addEventListener('change', async () => { try { const file = patientImportFile.files?.[0]; if (!file) return; pendingPatientImport = rowsToPatients(await parsePatientImportFile(file)); renderPatientImportPreview(); showFeedback('Patient import preview ready.'); } catch (error) { console.error('Patient import failed', error); showFeedback(error.message || 'Patient import failed.', 'error'); } });
-confirmPatientImport.addEventListener('click', () => runAction('Patients imported.', async () => { if (currentUser().role !== 'admin') throw new Error('Only admins can import patients.'); const incoming = pendingPatientImport.filter((item) => !item.duplicate && !item.errors.length).map((item) => item.patient); patients = [...patients, ...incoming]; syncPatients(); if (sharedMode && incoming.length) await savePatientImportShared({ fileName: patientImportFile.files?.[0]?.name || 'manual/sample import', importedBy: currentUserId, rowCount: pendingPatientImport.length, importedCount: incoming.length, errorCount: pendingPatientImport.filter((item) => item.errors.length).length, rows: pendingPatientImport }); pendingPatientImport = []; patientImportFile.value = ''; renderPatientImportPreview(); render(); }));
+confirmPatientImport.addEventListener('click', () => runAction('Patients imported.', async () => { if (currentUser().role !== 'admin') throw new Error('Only admins can import patients.'); const incoming = pendingPatientImport.filter((item) => !item.duplicate && !item.errors.length).map((item) => item.patient); patients = [...patients, ...incoming]; syncPatients(); if (isSupabaseConfigured && incoming.length) await savePatientImportShared({ fileName: patientImportFile.files?.[0]?.name || 'manual/sample import', importedBy: currentUserId, rowCount: pendingPatientImport.length, importedCount: incoming.length, errorCount: pendingPatientImport.filter((item) => item.errors.length).length, rows: pendingPatientImport }); pendingPatientImport = []; patientImportFile.value = ''; renderPatientImportPreview(); render(); }));
 
 exportButton.addEventListener('click', () => runAction('Backup exported.', () => { const blob = new Blob([JSON.stringify({ patients, therapists, visitLogs }, null, 2)], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `pt-scheduler-backup-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(link.href); }));
 
 importInput.addEventListener('change', async () => { try { const file = importInput.files?.[0]; if (!file) return; const backup = JSON.parse(await file.text()); patients = Array.isArray(backup.patients) ? backup.patients : patients; therapists = Array.isArray(backup.therapists) ? backup.therapists : therapists; visitLogs = Array.isArray(backup.visitLogs) ? backup.visitLogs : visitLogs; saveVisitLogs(visitLogs); syncPatients(); syncTherapists(); importInput.value = ''; render(); showFeedback('Backup imported.'); } catch (error) { console.error('Import failed', error); showFeedback('Import failed. Choose a valid backup JSON file.', 'error'); } });
 
 cancelEdit.addEventListener('click', () => runAction('Edit cancelled.', resetForm));
-authForm.addEventListener('submit', async (event) => { event.preventDefault(); if (!sharedMode) return showFeedback('Supabase is not connected. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY to enable login.', 'error'); try { const data = new FormData(authForm); await signIn(data.get('email'), data.get('password')); await initApp(); showFeedback('Logged in.'); } catch (error) { console.error(error); showFeedback(error.message || 'Login failed.', 'error'); } });
-signupButton.addEventListener('click', async () => { if (!sharedMode) return showFeedback('Supabase is not connected. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY to enable accounts.', 'error'); try { const data = new FormData(authForm); await signUp(data.get('email'), data.get('password'), data.get('name')); showFeedback('Account created. Check email if confirmation is enabled, then log in.'); } catch (error) { console.error(error); showFeedback(error.message || 'Signup failed.', 'error'); } });
-logoutButton.addEventListener('click', async () => { if (sharedMode) await signOut(); authSession = null; if (sharedMode) { patients = []; therapists = []; visitLogs = []; currentUserId = ''; pendingSuggestions = []; } render(); showFeedback('Logged out.'); });
+authForm.addEventListener('submit', async (event) => { event.preventDefault(); if (!isSupabaseConfigured) return showFeedback('Supabase is not connected. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY to enable login.', 'error'); try { const data = new FormData(authForm); await signIn(data.get('email'), data.get('password')); await initApp(); showFeedback('Logged in.'); } catch (error) { console.error(error); showFeedback(error.message || 'Login failed.', 'error'); } });
+signupButton.addEventListener('click', async () => { if (!isSupabaseConfigured) return showFeedback('Supabase is not connected. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY to enable accounts.', 'error'); try { const data = new FormData(authForm); await signUp(data.get('email'), data.get('password'), data.get('name')); showFeedback('Account created. Check email if confirmation is enabled, then log in.'); } catch (error) { console.error(error); showFeedback(error.message || 'Signup failed.', 'error'); } });
+logoutButton.addEventListener('click', async () => { if (isSupabaseConfigured) await signOut(); authSession = null; if (sharedMode) { patients = []; therapists = []; visitLogs = []; currentUserId = ''; pendingSuggestions = []; } render(); showFeedback('Logged out.'); });
 
 resetButton.addEventListener('click', () => runAction('Local sample data reset.', () => { if (sharedMode) throw new Error('Demo data reset is disabled when Supabase is configured.'); patients = initialPatients; therapists = initialTherapists; visitLogs = []; currentUserId = 't-admin'; savePatients(patients); saveTherapists(therapists); saveVisitLogs(visitLogs); saveSession(currentUserId); pendingSuggestions = []; suggestions.innerHTML = ''; resetForm(); renderPatientImportPreview(); render(); }));
 
 async function initApp() {
   try {
-    authSession = sharedMode ? await getSession() : null;
+    authSession = isSupabaseConfigured ? await getSession() : null;
     if (sharedMode && !authSession) {
       patients = []; therapists = []; visitLogs = []; currentUserId = ''; pendingSuggestions = []; pendingPatientImport = [];
       render();
@@ -685,5 +699,12 @@ async function initApp() {
   }
   resetForm(); renderPatientImportPreview(); render();
 }
-if (supabaseClient) supabaseClient.auth.onAuthStateChange(() => initApp());
+if (supabaseClient) supabaseClient.auth.onAuthStateChange((event, session) => {
+  if (!session) {
+    authSession = null; patients = []; therapists = []; visitLogs = []; currentUserId = ''; pendingSuggestions = []; pendingPatientImport = [];
+    render();
+    return;
+  }
+  initApp();
+});
 initApp();
