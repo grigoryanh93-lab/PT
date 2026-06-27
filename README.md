@@ -61,3 +61,32 @@ https://YOUR-GITHUB-USERNAME.github.io/PT/
 ### Deployment workflow
 
 The workflow in `.github/workflows/deploy-pages.yml` runs on pushes to `main` and on manual dispatch. It installs dependencies with `npm ci`, runs `npm test`, builds the static site with `npm run build`, uploads `dist/`, and deploys it through GitHub Pages.
+
+## Shared Supabase mode
+
+The app runs in demo mode when Supabase is not configured. Demo mode keeps using `localStorage` so a therapist can try the app on one device. To make the app shared across phones, create a Supabase project and run `supabase-schema.sql` in the Supabase SQL editor.
+
+### Environment variables
+
+Set these variables in Vercel (**Project Settings → Environment Variables**) and redeploy:
+
+```text
+SUPABASE_URL=https://YOUR-PROJECT.supabase.co
+SUPABASE_ANON_KEY=YOUR-PUBLIC-ANON-KEY
+```
+
+For local static builds you can also export `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` before running `npm run build`. The build writes those values into `dist/src/config.js`. Do not use the Supabase service-role key in Vercel or in the browser.
+
+### First admin and therapist accounts
+
+1. In Supabase Auth, create the first admin user.
+2. Copy that user's Auth UID.
+3. Insert matching rows in `profiles` and `therapists` with role `admin`.
+4. Log in to the app with the admin account.
+5. Use **Therapists → Add therapist** to create therapist profiles in the app, then create or invite matching Supabase Auth users from the Supabase dashboard using the same UID/profile details.
+
+Admins can see all patients, appointments, visit logs, reports, imports, and exports. Therapists can only read assigned patients and appointments because the Supabase row-level security policies filter rows by `auth.uid()`.
+
+### Offline/cache behavior
+
+Successful Supabase loads are cached to `localStorage`. If Supabase is unavailable, the app displays a warning and continues with the local cache so phone use is not blocked, but the source of truth for configured deployments is Supabase.
